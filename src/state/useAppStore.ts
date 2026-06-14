@@ -1,10 +1,9 @@
 // Central app-state hook for WP-C. Owns the integration seam:
 //   loadCompendium() -> scanner + STT provider -> detection feed -> transcript POST
 //
-// SWAP POINTS (fake -> real, one line each), marked `SWAP:` below:
-//   1. createFakeScanner(...)  ->  createScanner(...)         from '../matching'
-//   2. createFakeProvider(...) ->  createProvider(name)       from '../stt'
-// The contracts (Scanner, SttProvider) are stable, so each swap is mechanical.
+// Wired to the real implementations: createScanner (WP-A, '../matching') and
+// createProvider (WP-B, '../stt'). The offline fakes in ./fakes remain available
+// for dev/tests but are no longer used here.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadCompendium } from '../compendium/loader'
@@ -17,9 +16,8 @@ import type {
   SttState,
   TranscriptSegment,
 } from '../stt/types'
-// SWAP: when WP-A lands, replace `createFakeScanner` with `createScanner` from '../matching'.
-// SWAP: when WP-B lands, replace `createFakeProvider` with `createProvider` from '../stt'.
-import { createFakeProvider, createFakeScanner } from './fakes'
+import { createScanner } from '../matching'
+import { createProvider } from '../stt'
 import { createSession, postTranscript } from './transcript'
 
 /** A detection plus a feed-local id so React keys stay stable across re-renders. */
@@ -86,8 +84,7 @@ export function useAppStore(): AppStore {
       .then((c) => {
         if (!alive) return
         setCompendium(c)
-        // SWAP: createScanner(c) once WP-A is merged.
-        scannerRef.current = createFakeScanner(c)
+        scannerRef.current = createScanner(c)
         setLoading(false)
       })
       .catch((err: unknown) => {
@@ -125,8 +122,7 @@ export function useAppStore(): AppStore {
   // ---- Mic / STT lifecycle --------------------------------------------------
   const startListening = useCallback(async () => {
     if (!compendium) return
-    // SWAP: createProvider(provider) once WP-B is merged.
-    const stt = createFakeProvider(provider)
+    const stt = createProvider(provider)
     sttRef.current = stt
     // Seed keyterms with pinned names so the provider boosts them immediately.
     stt.setKeyterms(pinnedNamesRef.current)
