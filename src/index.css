@@ -1,0 +1,41 @@
+@import 'tailwindcss';
+
+/* Dark, parchment-on-leather D&D theme. Mobile-first, large text for table use. */
+@theme {
+  --color-bg: #1a1410;
+  --color-surface: #241c16;
+  --color-surface-2: #2e241c;
+  --color-border: #3d3024;
+  --color-ink: #ece3d4;
+  --color-ink-dim: #b3a48f;
+  --color-accent: #c0392b; /* dragon red */
+  --color-accent-2: #d4a531; /* gold */
+  --color-spell: #6c8cff;
+  --color-monster: #c0392b;
+  --color-item: #d4a531;
+  --color-condition: #9b59b6;
+  --color-rule: #5fa86a;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* Respect device safe areas on phones (notches, home indicator). */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
