@@ -1,0 +1,61 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  GCP_PROJECT_ID: YOUR_GCP_PROJECT_ID
+  GCP_REGION: us-central1
+  BACKEND_SERVICE_NAME: dnd-session-backend
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push backend container
+        run: |
+          gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+          gcloud builds submit \
+            --tag ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/docker-repo/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }} \
+            backend/
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
+            --image ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/docker-repo/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }} \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --allow-unauthenticated
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Firebase Hosting
+        run: |
+          npm install -g firebase-tools
+          firebase deploy --project ${{ env.GCP_PROJECT_ID }} --token $(gcloud auth application-default print-access-token)

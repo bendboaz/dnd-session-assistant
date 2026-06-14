@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - run: npm test --if-present
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements.txt
+      - run: |
+          if [ -d "backend/tests" ] || find backend -maxdepth 1 -name "test_*.py" -type f | grep -q .; then
+            pytest
+          fi
