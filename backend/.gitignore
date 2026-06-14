@@ -1,0 +1,3 @@
+# Local JSONL transcript store (fallback when Firestore is unconfigured).
+/data/
+*.jsonl
