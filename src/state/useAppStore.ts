@@ -1,0 +1,234 @@
+// Central app-state hook for WP-C. Owns the integration seam:
+//   loadCompendium() -> scanner + STT provider -> detection feed -> transcript POST
+//
+// SWAP POINTS (fake -> real, one line each), marked `SWAP:` below:
+//   1. createFakeScanner(...)  ->  createScanner(...)         from '../matching'
+//   2. createFakeProvider(...) ->  createProvider(name)       from '../stt'
+// The contracts (Scanner, SttProvider) are stable, so each swap is mechanical.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { loadCompendium } from '../compendium/loader'
+import type { Compendium } from '../compendium/loader'
+import type { CompendiumEntry } from '../compendium/types'
+import type { Detection, Scanner } from '../matching/types'
+import type {
+  SttProvider,
+  SttProviderName,
+  SttState,
+  TranscriptSegment,
+} from '../stt/types'
+// SWAP: when WP-A lands, replace `createFakeScanner` with `createScanner` from '../matching'.
+// SWAP: when WP-B lands, replace `createFakeProvider` with `createProvider` from '../stt'.
+import { createFakeProvider, createFakeScanner } from './fakes'
+import { createSession, postTranscript } from './transcript'
+
+/** A detection plus a feed-local id so React keys stay stable across re-renders. */
+export interface FeedItem extends Detection {
+  feedId: string
+}
+
+const DEFAULT_PROVIDER: SttProviderName =
+  import.meta.env.VITE_STT_PROVIDER === 'deepgram' ? 'deepgram' : 'soniox'
+
+let feedCounter = 0
+
+export interface AppStore {
+  // Loading
+  loading: boolean
+  loadError: string | null
+  compendium: Compendium | null
+
+  // Detection feed
+  feed: FeedItem[]
+
+  // STT
+  sttState: SttState
+  provider: SttProviderName
+  setProvider: (p: SttProviderName) => void
+  toggleListening: () => void
+
+  // Live transcript (latest finalized line, for the status area)
+  lastTranscript: string
+
+  // Pinning
+  pinned: CompendiumEntry[]
+  isPinned: (id: string) => boolean
+  togglePin: (entry: CompendiumEntry) => void
+
+  // Selection (which entry's stat block is open)
+  selected: CompendiumEntry | null
+  select: (entry: CompendiumEntry | null) => void
+}
+
+export function useAppStore(): AppStore {
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [compendium, setCompendium] = useState<Compendium | null>(null)
+
+  const [feed, setFeed] = useState<FeedItem[]>([])
+  const [sttState, setSttState] = useState<SttState>('idle')
+  const [provider, setProviderState] = useState<SttProviderName>(DEFAULT_PROVIDER)
+  const [lastTranscript, setLastTranscript] = useState('')
+
+  const [pinned, setPinned] = useState<CompendiumEntry[]>([])
+  const [selected, setSelected] = useState<CompendiumEntry | null>(null)
+
+  const scannerRef = useRef<Scanner | null>(null)
+  const sttRef = useRef<SttProvider | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
+  // Latest pinned names, read lazily so setKeyterms always sees fresh values.
+  const pinnedNamesRef = useRef<string[]>([])
+
+  // ---- Load the compendium + build the scanner once -------------------------
+  useEffect(() => {
+    let alive = true
+    loadCompendium()
+      .then((c) => {
+        if (!alive) return
+        setCompendium(c)
+        // SWAP: createScanner(c) once WP-A is merged.
+        scannerRef.current = createFakeScanner(c)
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (!alive) return
+        setLoadError(err instanceof Error ? err.message : String(err))
+        setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // ---- Handle one finalized transcript segment ------------------------------
+  const handleSegment = useCallback((seg: TranscriptSegment) => {
+    // The UI and scanner only act on finals (interims would spam the feed).
+    if (!seg.isFinal) return
+    setLastTranscript(seg.text)
+
+    const scanner = scannerRef.current
+    if (scanner) {
+      const detections = scanner.scan(seg.text, seg.ts)
+      if (detections.length) {
+        setFeed((prev) => [
+          ...detections.map((d) => ({ ...d, feedId: `f${feedCounter++}` })).reverse(),
+          ...prev,
+        ])
+      }
+    }
+
+    // Persist the segment (best-effort; tolerates an absent backend).
+    const sid = sessionIdRef.current
+    if (sid) void postTranscript(sid, [seg])
+  }, [])
+
+  // ---- Mic / STT lifecycle --------------------------------------------------
+  const startListening = useCallback(async () => {
+    if (!compendium) return
+    // SWAP: createProvider(provider) once WP-B is merged.
+    const stt = createFakeProvider(provider)
+    sttRef.current = stt
+    // Seed keyterms with pinned names so the provider boosts them immediately.
+    stt.setKeyterms(pinnedNamesRef.current)
+
+    // Lazily create a session to attach the transcript to (best-effort).
+    if (!sessionIdRef.current) {
+      sessionIdRef.current = await createSession()
+    }
+
+    await stt.start({
+      onSegment: handleSegment,
+      onStateChange: setSttState,
+      onError: (err) => {
+        console.error('[stt] error', err)
+        setSttState('error')
+      },
+    })
+  }, [compendium, provider, handleSegment])
+
+  const stopListening = useCallback(async () => {
+    const stt = sttRef.current
+    sttRef.current = null
+    if (stt) await stt.stop()
+    setSttState('stopped')
+  }, [])
+
+  const toggleListening = useCallback(() => {
+    const active =
+      sttState === 'listening' ||
+      sttState === 'connecting' ||
+      sttState === 'reconnecting'
+    if (active) void stopListening()
+    else void startListening()
+  }, [sttState, startListening, stopListening])
+
+  // Changing provider mid-session: stop the current stream so the next start
+  // picks up the new provider.
+  const setProvider = useCallback(
+    (p: SttProviderName) => {
+      setProviderState(p)
+      if (sttRef.current) void stopListening()
+    },
+    [stopListening],
+  )
+
+  // ---- Pinning --------------------------------------------------------------
+  const isPinned = useCallback(
+    (id: string) => pinned.some((e) => e.id === id),
+    [pinned],
+  )
+
+  const togglePin = useCallback((entry: CompendiumEntry) => {
+    setPinned((prev) => {
+      const exists = prev.some((e) => e.id === entry.id)
+      const next = exists
+        ? prev.filter((e) => e.id !== entry.id)
+        : [...prev, entry]
+      pinnedNamesRef.current = next.map((e) => e.name)
+      // Push fresh keyterms to a live provider immediately.
+      sttRef.current?.setKeyterms(pinnedNamesRef.current)
+      return next
+    })
+  }, [])
+
+  // Stop the mic when the app unmounts.
+  useEffect(() => {
+    return () => {
+      void sttRef.current?.stop()
+    }
+  }, [])
+
+  return useMemo(
+    () => ({
+      loading,
+      loadError,
+      compendium,
+      feed,
+      sttState,
+      provider,
+      setProvider,
+      toggleListening,
+      lastTranscript,
+      pinned,
+      isPinned,
+      togglePin,
+      selected,
+      select: setSelected,
+    }),
+    [
+      loading,
+      loadError,
+      compendium,
+      feed,
+      sttState,
+      provider,
+      setProvider,
+      toggleListening,
+      lastTranscript,
+      pinned,
+      isPinned,
+      togglePin,
+      selected,
+    ],
+  )
+}
