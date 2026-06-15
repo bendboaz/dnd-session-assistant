@@ -25,6 +25,10 @@ export interface FeedItem extends Detection {
   feedId: string
 }
 
+// Soniox is the default: with context-term seeding it returns dropped-in English
+// game terms in *exact* Latin spelling during live streaming, so they match the
+// SRD directly. (Deepgram's batch keeps Latin too, but its *streaming* Hebraizes
+// the terms even with keyterms.) Override with VITE_STT_PROVIDER=deepgram.
 const DEFAULT_PROVIDER: SttProviderName =
   import.meta.env.VITE_STT_PROVIDER === 'deepgram' ? 'deepgram' : 'soniox'
 

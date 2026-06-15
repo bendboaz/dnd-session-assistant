@@ -5,8 +5,8 @@
 // (~100 keyterms / ~500 tokens). Keyterms are therefore a targeted booster
 // (pinned + expected names) — full coverage is the local matching engine.
 //
-// Auth: Deepgram accepts a short-lived token via the WebSocket subprotocol pair
-// `['token', <token>]` (minted server-side from the scoped keys-grant API);
+// Auth: Deepgram accepts a short-lived bearer token via the WebSocket subprotocol
+// pair `['bearer', <token>]` (minted server-side from the keys-grant API);
 // never the long-lived key. Config travels in the URL query string. We stream
 // raw PCM16 (linear16) and parse `Results` messages.
 
@@ -36,8 +36,9 @@ export class DeepgramProvider extends BaseWsProvider {
 
       socketUrl: (_token, sampleRate) => buildDeepgramUrl(sampleRate, currentKeyterms),
 
-      // Deepgram authenticates the WS via the `token` subprotocol.
-      socketProtocols: (token) => ['token', token],
+      // Deepgram's short-lived grant token is a bearer JWT, presented via the
+      // `bearer` subprotocol (the `token` subprotocol is for raw API keys).
+      socketProtocols: (token) => ['bearer', token],
 
       // Keyterms are in the URL, so capture them at clamp time for socketUrl.
       clampKeyterms: (terms) => {

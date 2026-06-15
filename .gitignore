@@ -19,6 +19,10 @@ backend/.env
 *-key.json
 gcp-credentials*.json
 
+# Audio data — ignore everything under data/ except the curated samples folder
+data/*
+!data/samples/
+
 # Python backend
 backend/.venv/
 backend/venv/
