@@ -22,10 +22,19 @@ jobs:
       - name: Diff against base
         run: git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
 
+      - name: Fetch existing PR comment thread
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr view "${{ github.event.pull_request.number }}" \
+            --json comments \
+            --jq '.comments[] | "----\n" + .body' \
+            > pr_comments.txt || true
+
       - name: Generate AI review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python .github/scripts/ai_review.py pr.diff > review.md
+        run: python .github/scripts/ai_review.py pr.diff pr_comments.txt > review.md
 
       - name: Post review comment
         env:

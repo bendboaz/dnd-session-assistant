@@ -65,6 +65,25 @@ Backend (in `backend/`): create a venv, `pip install -r requirements.txt`,
   **server-side only** (backend `.env` locally; GCP Secret Manager in prod) and must never reach the
   client bundle. The browser only ever holds short-lived tokens from `/api/stt-token`.
 
+## PR comment authorship
+
+All automated comments post from the same GitHub account as the human, so every agent **must**
+prefix its PR comments with a role header so the AI review (and human readers) can tell them apart:
+
+| Role | Header prefix |
+|---|---|
+| Reviewing agent (CI AI review) | `🔎 **[Reviewing Agent]**` |
+| Implementing agent (Claude subagent posting via `gh`) | `🛠️ **[Implementing Agent]**` |
+| Human | no header required (an unprefixed comment is assumed to be human); optional `👤 **[Human]**` |
+
+**Rules for dispatched agents:**
+
+- Every PR comment posted programmatically (e.g. via `gh pr comment`) **must** start with the
+  agent's role header on the first line, followed by a blank line, then the body.
+- The AI review script reads these headers to distinguish reviewer remarks, implementer replies,
+  and human feedback. It will not re-raise a point if the thread shows an `[Implementing Agent]`
+  or `[Human]` reply that addresses it.
+
 ## Autonomy
 
 - Free to do: read files, search, run read-only git/docker/pip-info commands, typecheck/build/test.
