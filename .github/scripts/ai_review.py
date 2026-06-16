@@ -10,7 +10,7 @@ import sys
 
 from anthropic import Anthropic
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-opus-4-8"  # intended current model — not a placeholder
 MAX_DIFF_CHARS = 120_000  # guard against huge PRs blowing the context window
 
 CHECKLIST = """You are reviewing a pull request for the "D&D Session Assistant" project.
@@ -41,7 +41,10 @@ def main() -> None:
 
     truncated = len(diff) > MAX_DIFF_CHARS
     if truncated:
-        diff = diff[:MAX_DIFF_CHARS]
+        # Truncate at the last newline before the cap so the fed diff stays well-formed
+        # (avoids cutting mid-line, which can produce malformed diff hunks).
+        cap = diff.rfind("\n", 0, MAX_DIFF_CHARS)
+        diff = diff[: cap if cap != -1 else MAX_DIFF_CHARS]
 
     client = Anthropic()
     msg = client.messages.create(

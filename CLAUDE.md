@@ -19,10 +19,15 @@ This repo is built by **multiple sessions in parallel**, one per work package (W
 
 1. **Claim exactly one work package.** Work only inside that package's **owned files** (listed in the
    task brief). Do not edit another package's files.
-2. **Contract files are READ-ONLY.** These define the seams between packages:
-   `src/lib/text.ts`, `src/compendium/types.ts`, `src/compendium/loader.ts`,
-   `src/matching/types.ts`, `src/stt/types.ts`. If a contract needs to change, stop and raise it with
-   the orchestrator / update `docs/DESIGN.md` first — don't fork it in a feature branch.
+2. **Contract files are READ-ONLY.** These define the seams between packages — keep them frozen:
+   `src/lib/text.ts`, `src/compendium/types.ts`, `src/matching/types.ts`, `src/stt/types.ts`.
+   For `src/compendium/loader.ts` specifically: the frozen contract is the **public `Compendium`
+   interface signature** (`loadCompendium()` return type, `exact`/`phonetic`/`search` method
+   signatures) and the `CompendiumEntry` + payload shapes in `types.ts`. The loader's **internal
+   implementation** — alias generation, index building, normalization helpers — may evolve freely as
+   long as those public types and signatures are unchanged. Changes to the public interface or to any
+   of the other contract files above must go through the orchestrator / `docs/DESIGN.md` first —
+   don't fork them in a feature branch.
 3. **Work on your assigned git branch / worktree** (see the task brief). Don't commit to `main`.
 4. **Develop against contracts, not other packages.** If you need another package that isn't built
    yet, use a local fake/stub that satisfies its contract (e.g. a `FakeSttProvider`, a fake `Scanner`).
