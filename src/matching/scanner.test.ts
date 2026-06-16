@@ -3,6 +3,7 @@ import { normalize, phoneticKey } from '../lib/text'
 import type { Compendium } from '../compendium/loader'
 import type { CompendiumEntry, EntryKind } from '../compendium/types'
 import { createScanner } from './scanner'
+import { installSrdFetch } from '../test/srdFetch'
 
 // ---------------------------------------------------------------------------
 // A tiny hand-built Compendium fake. The task explicitly permits this for unit
@@ -175,32 +176,8 @@ describe('stop-list / spam guard', () => {
 // ---------------------------------------------------------------------------
 // End-to-end against the REAL vendored SRD, loaded by the real loader. Under
 // vitest (node) there is no global fetch for the loader's relative URLs, so we
-// stub fetch to serve the JSON. We pull the JSON in via Vite's `import.meta.glob`
-// (typed by `vite/client`) rather than `node:fs`, so no @types/node is needed.
+// stub fetch to serve the JSON. installSrdFetch() is shared from src/test/srdFetch.ts.
 // ---------------------------------------------------------------------------
-
-// Eagerly import every vendored SRD JSON, keyed by basename.
-const SRD_MODULES = import.meta.glob('../../public/data/srd/*.json', {
-  eager: true,
-  import: 'default',
-}) as Record<string, unknown>
-
-const SRD_BY_FILE = new Map<string, unknown>(
-  Object.entries(SRD_MODULES).map(([p, data]) => [p.split('/').pop()!, data]),
-)
-
-/** Stub globalThis.fetch to serve vendored SRD JSON from disk. */
-function installSrdFetch(): void {
-  globalThis.fetch = (async (input: string | URL | Request) => {
-    const url = typeof input === 'string' ? input : input.toString()
-    const file = url.split('/').pop()!
-    const data = SRD_BY_FILE.get(file)
-    if (data === undefined) {
-      return { ok: false, status: 404, json: async () => null } as Response
-    }
-    return { ok: true, status: 200, json: async () => data } as Response
-  }) as typeof fetch
-}
 
 describe('createScanner — real SRD compendium (basic)', () => {
   let compendium: Compendium
@@ -312,6 +289,8 @@ describe('createScanner — real SRD: split single-word names', () => {
     // re-triggers a spurious detection.
     const s = createScanner(compendium)
     const d = s.scan('fire ball')
+    // Must have matched something (non-empty guard so the every() is not vacuously true).
+    expect(d.length).toBeGreaterThan(0)
     // Only one detection, and it must be Fireball
     expect(d.every((x) => x.entry.name === 'Fireball')).toBe(true)
   })
@@ -381,6 +360,11 @@ describe('createScanner — real SRD: possessive / apostrophe handling', () => {
 describe('createScanner — real SRD: phonetic typo tolerance', () => {
   // Deepgram/Soniox STT produces phonetically similar misspellings; the phonetic
   // index (double-metaphone) catches these so the match still fires.
+  //
+  // NOTE: The specific phonetic codes asserted below (e.g. "blest" ≅ "blast",
+  // "missael" ≅ "missile") depend on the `double-metaphone` library's output.
+  // If that library is upgraded or replaced, re-verify these expectations and
+  // update them to match the new library's codes.
   let compendium: Compendium
 
   beforeAll(async () => {

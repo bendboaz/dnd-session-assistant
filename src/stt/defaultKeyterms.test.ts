@@ -10,31 +10,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { Compendium } from '../compendium/loader'
 import { DEFAULT_KEYTERM_CANDIDATES } from './defaultKeyterms'
-
-// ---------------------------------------------------------------------------
-// SRD JSON stub — same pattern as scanner.test.ts and loader.test.ts.
-// ---------------------------------------------------------------------------
-
-const SRD_MODULES = import.meta.glob('../../public/data/srd/*.json', {
-  eager: true,
-  import: 'default',
-}) as Record<string, unknown>
-
-const SRD_BY_FILE = new Map<string, unknown>(
-  Object.entries(SRD_MODULES).map(([p, data]) => [p.split('/').pop()!, data]),
-)
-
-function installSrdFetch(): void {
-  globalThis.fetch = (async (input: string | URL | Request) => {
-    const url = typeof input === 'string' ? input : input.toString()
-    const file = url.split('/').pop()!
-    const data = SRD_BY_FILE.get(file)
-    if (data === undefined) {
-      return { ok: false, status: 404, json: async () => null } as Response
-    }
-    return { ok: true, status: 200, json: async () => data } as Response
-  }) as typeof fetch
-}
+import { installSrdFetch } from '../test/srdFetch'
 
 // ---------------------------------------------------------------------------
 // Known non-SRD terms from REGRESSIONS.md. These are in the candidate list
@@ -79,8 +55,9 @@ describe('DEFAULT_KEYTERM_CANDIDATES — SRD presence', () => {
 
   beforeAll(async () => {
     installSrdFetch()
-    // Use a fresh import — vi.resetModules() not strictly needed here since
-    // this file loads first and the fetch stub is already installed.
+    // Use a fresh import — vi.resetModules() not strictly needed here because
+    // each Vitest test file runs in an isolated module registry, so the fetch
+    // stub installed above does not leak in from other test files.
     const { loadCompendium } = await import('../compendium/loader')
     compendium = await loadCompendium()
   })

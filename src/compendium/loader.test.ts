@@ -8,33 +8,7 @@
 
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Compendium } from './loader'
-
-// ---------------------------------------------------------------------------
-// Shared SRD JSON loader: Vite eagerly imports all JSON files at build/test
-// time so we can serve them from memory without hitting the filesystem at
-// runtime in the Node test environment.
-// ---------------------------------------------------------------------------
-
-const SRD_MODULES = import.meta.glob('../../public/data/srd/*.json', {
-  eager: true,
-  import: 'default',
-}) as Record<string, unknown>
-
-const SRD_BY_FILE = new Map<string, unknown>(
-  Object.entries(SRD_MODULES).map(([p, data]) => [p.split('/').pop()!, data]),
-)
-
-function installSrdFetch(): void {
-  globalThis.fetch = (async (input: string | URL | Request) => {
-    const url = typeof input === 'string' ? input : input.toString()
-    const file = url.split('/').pop()!
-    const data = SRD_BY_FILE.get(file)
-    if (data === undefined) {
-      return { ok: false, status: 404, json: async () => null } as Response
-    }
-    return { ok: true, status: 200, json: async () => data } as Response
-  }) as typeof fetch
-}
+import { installSrdFetch } from '../test/srdFetch'
 
 // ---------------------------------------------------------------------------
 // Helper that wipes the module cache so loadCompendium()'s module-level
@@ -73,6 +47,9 @@ describe('loadCompendium — structure & counts', () => {
     expect(kinds).toContain('condition')
   })
 
+  // Count baselines below are tied to the vendored SRD dataset (public/data/srd/).
+  // If the SRD JSON files are re-vendored, re-check these numbers and update accordingly.
+
   it('has at least 319 spells (SRD spell count)', () => {
     const spells = compendium.entries.filter((e) => e.kind === 'spell')
     expect(spells.length).toBeGreaterThanOrEqual(319)
@@ -83,9 +60,11 @@ describe('loadCompendium — structure & counts', () => {
     expect(monsters.length).toBeGreaterThanOrEqual(334)
   })
 
-  it('has exactly 15 conditions', () => {
+  it('has at least 15 conditions', () => {
+    // 15 conditions in the vendored SRD dataset; >= so a future re-vendor adding
+    // conditions doesn't break this assertion.
     const conditions = compendium.entries.filter((e) => e.kind === 'condition')
-    expect(conditions.length).toBe(15)
+    expect(conditions.length).toBeGreaterThanOrEqual(15)
   })
 
   it('names array length matches entries array length', () => {
