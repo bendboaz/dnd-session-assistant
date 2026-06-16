@@ -73,10 +73,10 @@ for feature work; changes go through this design doc + the orchestrator.
 | Compendium loader | `src/compendium/loader.ts` (`loadCompendium()` → `Compendium`) | ✅ done |
 | Matching contract | `src/matching/types.ts` (`Detection`, `Scanner`, `ScannerOptions`) | ✅ contract |
 | STT contract | `src/stt/types.ts` (`SttProvider`, `TranscriptSegment`, `SttTokenResponse`) | ✅ contract |
-| Matching engine | `src/matching/scanner.ts` | ⬜ WP-A |
-| STT layer | `src/stt/*Provider.ts`, mic capture, `createProvider`, fake provider | ⬜ WP-B |
-| UI | `src/App.tsx`, `src/ui/*`, app state wiring | ⬜ WP-C |
-| Backend | `backend/*` | ⬜ WP-D |
+| Matching engine | `src/matching/scanner.ts` | ✅ done |
+| STT layer | `src/stt/*Provider.ts`, mic capture, `createProvider`, fake provider | ✅ done |
+| UI | `src/App.tsx`, `src/ui/*`, app state wiring | ✅ done |
+| Backend | `backend/*` | ✅ done |
 
 > **Contract scope for the compendium loader:** the frozen contract is the **public `Compendium`
 > interface signature** (`loadCompendium()` return type, `exact`/`phonetic`/`search` method
