@@ -88,9 +88,17 @@ interface RawCondition {
 
 function makeAliases(name: string): string[] {
   const set = new Set<string>()
-  set.add(normalize(name))
+  const base = normalize(name)
+  set.add(base)
   // A bare-apostrophe variant helps when STT drops the possessive entirely.
   set.add(normalize(name.replace(/['’]/g, '')))
+  // Run-together variant: STT often drops the space in multi-word names
+  // ("Fire Bolt" -> "firebolt", "Magic Missile" -> "magicmissile"), which would
+  // otherwise miss (a single token can't match a multi-word entry, and the
+  // scanner's single-token guard blocks fuzzy/phonetic). Index the no-space form
+  // so it still resolves at the exact tier.
+  const noSpace = base.replace(/ /g, '')
+  if (noSpace !== base) set.add(noSpace)
   return [...set].filter(Boolean)
 }
 

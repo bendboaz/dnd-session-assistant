@@ -53,6 +53,17 @@ Backlog:
   - **Shared sessions:** multiple devices view the same live entry/detection feed, while
     only **one** device captures audio (one recorder, many viewers).
 
+## Logging & data collection
+
+- **Debug mode:** verbose logging of the whole pipeline — raw STT segments (interim +
+  final), the keyterms actually sent to the provider, and matcher inputs/outputs
+  (candidate windows, chosen detection, method, confidence, and *misses*). Toggle via
+  an env/flag; off in production.
+- **Production data collection:** persist transcripts + detections **and near-misses**
+  (Latin tokens that looked like entity mentions but matched nothing — e.g. `firebolt`)
+  so the extraction/matching can be analyzed and improved later. Store alongside session
+  transcripts (Firestore / local JSONL). Note privacy: this is real table-audio content.
+
 ## Summarization (already stubbed)
 
 - `POST /api/sessions/{id}/summarize` returns 501. Wire it to Ollama (local) or the
