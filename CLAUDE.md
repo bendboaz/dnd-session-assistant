@@ -2,7 +2,7 @@
 
 A mobile-first PWA that listens to a D&D table (Hebrew speech, English game terms), auto-detects
 spells/monsters/items/conditions, and shows their stat blocks. See **`docs/DESIGN.md`** for the full
-design and **`docs/TASKS.md`** for the parallel work breakdown.
+design. The actionable backlog lives in **GitHub Issues**.
 
 ## Platform (Windows)
 
@@ -14,8 +14,8 @@ Use Windows paths (`D:\Users\Boaz\CodeProjects\...`), never POSIX (`/mnt/d/...`)
 
 ## Working agreement for parallel sessions
 
-This repo is built by **multiple sessions in parallel**, one per work package (WP-A … WP-D in
-`docs/TASKS.md`). To avoid collisions:
+This repo can be built by **multiple agents/sessions in parallel**, one per work package / task.
+To avoid collisions:
 
 1. **Claim exactly one work package.** Work only inside that package's **owned files** (listed in the
    task brief). Do not edit another package's files.
@@ -58,7 +58,7 @@ This repo is built by **multiple sessions in parallel**, one per work package (W
 npm run dev      # Vite dev server (exposed on LAN for phone testing; proxies /api → :8000)
 npm run build    # tsc + vite build (+ PWA service worker)
 npx tsc --noEmit # typecheck only
-npm test         # vitest (test runner; WP-A sets it up if not yet present)
+npm test         # vitest (test runner)
 ```
 
 Backend (in `backend/`): create a venv, `pip install -r requirements.txt`,
