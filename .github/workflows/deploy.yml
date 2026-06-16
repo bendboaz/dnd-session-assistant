@@ -1,9 +1,9 @@
 name: Deploy
 
+# Manual trigger until GCP is configured (project id, Artifact Registry, secrets,
+# Firebase). Re-enable `push: branches: [main]` once infra/SETUP-GCP.md is done.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 env:
   GCP_PROJECT_ID: YOUR_GCP_PROJECT_ID

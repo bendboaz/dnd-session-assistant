@@ -18,6 +18,7 @@ import type {
 } from '../stt/types'
 import { createScanner } from '../matching'
 import { createProvider } from '../stt'
+import { DEFAULT_KEYTERM_CANDIDATES } from '../stt/defaultKeyterms'
 import { createSession, postTranscript } from './transcript'
 
 /** A detection plus a feed-local id so React keys stay stable across re-renders. */
@@ -80,6 +81,8 @@ export function useAppStore(): AppStore {
   const sessionIdRef = useRef<string | null>(null)
   // Latest pinned names, read lazily so setKeyterms always sees fresh values.
   const pinnedNamesRef = useRef<string[]>([])
+  // Common-term keyterm seed, validated against the loaded compendium.
+  const defaultKeytermsRef = useRef<string[]>([])
 
   // ---- Load the compendium + build the scanner once -------------------------
   useEffect(() => {
@@ -89,6 +92,10 @@ export function useAppStore(): AppStore {
         if (!alive) return
         setCompendium(c)
         scannerRef.current = createScanner(c)
+        // Keep only seed terms that actually exist in the SRD (drops non-SRD names).
+        defaultKeytermsRef.current = DEFAULT_KEYTERM_CANDIDATES.filter(
+          (n) => c.exact(n).length > 0,
+        )
         setLoading(false)
       })
       .catch((err: unknown) => {
@@ -128,8 +135,8 @@ export function useAppStore(): AppStore {
     if (!compendium) return
     const stt = createProvider(provider)
     sttRef.current = stt
-    // Seed keyterms with pinned names so the provider boosts them immediately.
-    stt.setKeyterms(pinnedNamesRef.current)
+    // Seed keyterms: pinned names first (priority), then the common-term defaults.
+    stt.setKeyterms([...pinnedNamesRef.current, ...defaultKeytermsRef.current])
 
     // Lazily create a session to attach the transcript to (best-effort).
     if (!sessionIdRef.current) {
@@ -185,8 +192,11 @@ export function useAppStore(): AppStore {
         ? prev.filter((e) => e.id !== entry.id)
         : [...prev, entry]
       pinnedNamesRef.current = next.map((e) => e.name)
-      // Push fresh keyterms to a live provider immediately.
-      sttRef.current?.setKeyterms(pinnedNamesRef.current)
+      // Push fresh keyterms to a live provider immediately (pinned + defaults).
+      sttRef.current?.setKeyterms([
+        ...pinnedNamesRef.current,
+        ...defaultKeytermsRef.current,
+      ])
       return next
     })
   }, [])

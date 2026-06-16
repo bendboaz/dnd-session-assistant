@@ -1,7 +1,10 @@
 name: CI
 
+# Run on PRs (branch protection requires this) and on pushes to main.
+# Not on every feature-branch push, to avoid duplicate runs alongside the PR.
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -12,6 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run build
@@ -19,13 +23,21 @@ jobs:
 
   backend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
           python-version: '3.12'
-      - run: pip install -r backend/requirements.txt
-      - run: |
-          if [ -d "backend/tests" ] || find backend -maxdepth 1 -name "test_*.py" -type f | grep -q .; then
+      # Backend modules import as top-level (e.g. `from config import ...`), so pytest
+      # must run from backend/. pytest isn't a runtime dep, so install it explicitly.
+      - run: pip install -r requirements.txt pytest
+      - name: Run backend tests if present
+        run: |
+          if [ -d tests ] || ls test_*.py >/dev/null 2>&1; then
             pytest
+          else
+            echo "No backend tests yet; skipping."
           fi

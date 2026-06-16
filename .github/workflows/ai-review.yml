@@ -3,6 +3,10 @@ name: AI Review
 on:
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   ai-review:
     runs-on: ubuntu-latest
@@ -13,47 +17,17 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.12'
-      - run: |
-          pip install anthropic
+      - run: pip install anthropic
 
-          DIFF=$(git diff origin/${{ github.base_ref }}...HEAD)
+      - name: Diff against base
+        run: git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
 
-          CHECKLIST="Please review the following code for:
-          - (a) adequate test coverage for changed code
-          - (b) dead/deprecated code removed
-          - (c) conventions from CLAUDE.md followed: Tailwind theme CSS vars not hard-coded hex; no 'any' used to silence the compiler; contract files src/lib/text.ts, src/compendium/*, src/matching/types.ts, src/stt/types.ts not edited"
-
-          cat > review_script.py << 'EOF'
-          import os
-          import sys
-          from anthropic import Anthropic
-
-          diff = sys.argv[1]
-          checklist = sys.argv[2]
-
-          client = Anthropic()
-          message = client.messages.create(
-              model="claude-opus-4-8",
-              max_tokens=1024,
-              messages=[
-                  {
-                      "role": "user",
-                      "content": f"{checklist}\n\nCode diff:\n```\n{diff}\n```"
-                  }
-              ]
-          )
-
-          review_text = message.content[0].text
-          print(review_text)
-          EOF
-
-          python review_script.py "$DIFF" "$CHECKLIST" > review_output.txt
-
-          REVIEW=$(cat review_output.txt)
-
-          gh pr comment -b "## AI Review
-
-$REVIEW"
+      - name: Generate AI review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python .github/scripts/ai_review.py pr.diff > review.md
+
+      - name: Post review comment
+        env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --body-file review.md
