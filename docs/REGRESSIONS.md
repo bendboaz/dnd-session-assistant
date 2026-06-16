@@ -5,25 +5,25 @@ we don't reintroduce it. Grouped by layer; `✅` = already has a regression test
 
 ## Matching engine (`src/matching`, `src/compendium`)
 
-- ⬜ **Run-together multi-word names.** STT emits `firebolt` / `magicmissile` (no space)
+- ✅ **Run-together multi-word names.** STT emits `firebolt` / `magicmissile` (no space)
   for "Fire Bolt" / "Magic Missile". Must resolve to the multi-word SRD entry. (Fixed via
   no-space alias in `loader.makeAliases`; add a test asserting `scan("firebolt")` →
   Fire Bolt and `scan("magicmissile")` → Magic Missile.)
-- ⬜ **Split single-word names.** Spoken "fire ball" → Fireball, "bee holder" → (a
+- ✅ **Split single-word names.** Spoken "fire ball" → Fireball, "bee holder" → (a
   multi-word entry) via phonetic concatenation. Assert these resolve.
 - ✅ **Possessive prefix.** "tasha's hideous laughter" → Hideous Laughter.
-- ⬜ **English term embedded in Hebrew.** `scan("אז אני מטיל fireball על הgoblin")` →
+- ✅ **English term embedded in Hebrew.** `scan("אז אני מטיל fireball על הgoblin")` →
   Fireball + Goblin (Hebrew ignored, Latin tokens matched).
-- ⬜ **Hebrew-script terms are NOT matched.** `scan("מטיל פיירבול")` → no detection
+- ✅ **Hebrew-script terms are NOT matched.** `scan("מטיל פיירבול")` → no detection
   (documents the current limitation until cross-script matching lands).
-- ⬜ **Phonetic typo tolerance.** Deepgram-style misspellings ("magic missael",
+- ✅ **Phonetic typo tolerance.** Deepgram-style misspellings ("magic missael",
   "magic missal") → Magic Missile.
-- ⬜ **Single common-word stop-list.** Bare "shield"/"fire"/"light"/"fly" do NOT
+- ✅ **Single common-word stop-list.** Bare "shield"/"fire"/"light"/"fly" do NOT
   auto-emit, but ARE still findable via `compendium.search`.
 - ✅ **Cooldown.** Repeated mentions within the window are suppressed; re-emit after.
-- ⬜ **Greedy longest-match.** "fire ball" matched as Fireball is not also emitted as
+- ✅ **Greedy longest-match.** "fire ball" matched as Fireball is not also emitted as
   "ball"; consumed tokens are skipped.
-- ⬜ **Non-SRD names absent.** Beholder / Mind Flayer / Hex / Vampire are not in the SRD
+- ✅ **Non-SRD names absent.** Beholder / Mind Flayer / Hex / Vampire are not in the SRD
   data — assert `compendium.exact` returns empty (so seed-list validation drops them).
 
 ## STT providers (`src/stt`)
@@ -32,7 +32,7 @@ we don't reintroduce it. Grouped by layer; `✅` = already has a regression test
   `['token', token]` (that's for raw API keys) — the latter caused the
   connect→reconnect→error loop. Unit-test the `socketProtocols` builder.
 - ⬜ **Keyterm cap + dedup.** `clampKeyterms` caps to ~100 and de-dupes case-insensitively.
-- ⬜ **Default keyterm seeding.** Candidates validated against the compendium (non-SRD
+- ✅ **Default keyterm seeding.** Candidates validated against the compendium (non-SRD
   dropped); pinned names take priority and the merged list respects the cap.
 - ⬜ **Soniox `<end>` marker leak.** `enable_endpoint_detection` leaks a literal `<end>`
   token into transcript text — strip control markers (then assert they're absent).

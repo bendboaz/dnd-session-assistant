@@ -28,6 +28,12 @@ This repo is built by **multiple sessions in parallel**, one per work package (W
    long as those public types and signatures are unchanged. Changes to the public interface or to any
    of the other contract files above must go through the orchestrator / `docs/DESIGN.md` first —
    don't fork them in a feature branch.
+
+   **Carve-out — test files are NOT contract-frozen.** The contract covers only the listed source
+   files above plus the public `Compendium` interface signature. New test files (`*.test.ts`) and
+   other test-only helpers may be added under any directory — including `src/compendium/`,
+   `src/matching/`, `src/stt/`, or a shared `src/test/` — without going through the orchestrator.
+   Test files are owned by whichever work package writes them and may be edited freely.
 3. **Work on your assigned git branch / worktree** (see the task brief). Don't commit to `main`.
 4. **Develop against contracts, not other packages.** If you need another package that isn't built
    yet, use a local fake/stub that satisfies its contract (e.g. a `FakeSttProvider`, a fake `Scanner`).

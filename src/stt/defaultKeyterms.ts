@@ -2,10 +2,14 @@
 // English mid-Hebrew. Seeding these into Soniox's context makes it transcribe
 // them in exact Latin spelling (instead of Hebraizing), so they match the SRD.
 //
-// The provider caps context terms (~100) and the store prioritizes pinned terms,
-// so this is an ordered "greatest hits" list (most-spoken first). It's validated
-// against the loaded compendium at runtime, so any non-SRD entry here is simply
-// dropped — edit freely.
+// The list is spells-first by design: spells are spoken more often at the table
+// and should survive the provider's ~100-term cap even when pinned names consume
+// the top slots. After pinned names take priority (via buildKeyterms), the cap
+// is applied by the provider's clampKeyterms — so the monster tail of this list
+// may be dropped when the combined list is long. Spells win ties.
+//
+// Validated against the loaded compendium at runtime, so any non-SRD entry here
+// is simply dropped — edit freely.
 
 export const DEFAULT_KEYTERM_CANDIDATES: string[] = [
   // --- High-frequency combat / utility spells ---

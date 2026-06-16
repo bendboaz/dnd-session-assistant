@@ -3,6 +3,7 @@ import { normalize, phoneticKey } from '../lib/text'
 import type { Compendium } from '../compendium/loader'
 import type { CompendiumEntry, EntryKind } from '../compendium/types'
 import { createScanner } from './scanner'
+import { installSrdFetch } from '../test/srdFetch'
 
 // ---------------------------------------------------------------------------
 // A tiny hand-built Compendium fake. The task explicitly permits this for unit
@@ -175,36 +176,14 @@ describe('stop-list / spam guard', () => {
 // ---------------------------------------------------------------------------
 // End-to-end against the REAL vendored SRD, loaded by the real loader. Under
 // vitest (node) there is no global fetch for the loader's relative URLs, so we
-// stub fetch to serve the JSON. We pull the JSON in via Vite's `import.meta.glob`
-// (typed by `vite/client`) rather than `node:fs`, so no @types/node is needed.
+// stub fetch to serve the JSON. installSrdFetch() is shared from src/test/srdFetch.ts.
 // ---------------------------------------------------------------------------
 
-// Eagerly import every vendored SRD JSON, keyed by basename.
-const SRD_MODULES = import.meta.glob('../../public/data/srd/*.json', {
-  eager: true,
-  import: 'default',
-}) as Record<string, unknown>
-
-const SRD_BY_FILE = new Map<string, unknown>(
-  Object.entries(SRD_MODULES).map(([p, data]) => [p.split('/').pop()!, data]),
-)
-
-describe('createScanner — real SRD compendium', () => {
+describe('createScanner — real SRD compendium (basic)', () => {
   let compendium: Compendium
 
   beforeAll(async () => {
-    // The loader requests `${BASE_URL}data/srd/<file>`; intercept and serve the
-    // matching basename from the globbed JSON.
-    globalThis.fetch = (async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      const file = url.split('/').pop()!
-      const data = SRD_BY_FILE.get(file)
-      if (data === undefined) {
-        return { ok: false, status: 404, json: async () => null } as Response
-      }
-      return { ok: true, status: 200, json: async () => data } as Response
-    }) as typeof fetch
-
+    installSrdFetch()
     const { loadCompendium } = await import('../compendium/loader')
     compendium = await loadCompendium()
   })
@@ -233,5 +212,330 @@ describe('createScanner — real SRD compendium', () => {
   it('does not spam on a stop-listed common word', () => {
     const s = createScanner(compendium)
     expect(s.scan('he raised his shield')).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Expanded real-SRD tests covering the full REGRESSIONS.md checklist.
+// All tests in this describe share the same compendium instance loaded above.
+// ---------------------------------------------------------------------------
+
+describe('createScanner — real SRD: run-together multi-word names', () => {
+  // STT drops spaces: "Fire Bolt" -> "firebolt", "Magic Missile" -> "magicmissile".
+  // The loader's makeAliases indexes the no-space form so it resolves at the exact tier.
+  let compendium: Compendium
+
+  beforeAll(async () => {
+    installSrdFetch()
+    const { loadCompendium } = await import('../compendium/loader')
+    compendium = await loadCompendium()
+  })
+
+  it('resolves run-together "firebolt" to Fire Bolt (exact via no-space alias)', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('firebolt')
+    const fb = d.find((x) => x.entry.name === 'Fire Bolt')
+    expect(fb).toBeDefined()
+    expect(fb!.method).toBe('exact')
+  })
+
+  it('resolves run-together "magicmissile" to Magic Missile (exact via no-space alias)', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('magicmissile')
+    const mm = d.find((x) => x.entry.name === 'Magic Missile')
+    expect(mm).toBeDefined()
+    expect(mm!.method).toBe('exact')
+  })
+
+  it('resolves run-together "lightningbolt" to Lightning Bolt', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('lightningbolt')
+    expect(d.map((x) => x.entry.name)).toContain('Lightning Bolt')
+  })
+})
+
+describe('createScanner — real SRD: split single-word names', () => {
+  // "fire ball" spoken as two tokens -> Fireball via phonetic concatenation.
+  // "fire bolt" as two tokens -> Fire Bolt via exact (the spaced alias).
+  let compendium: Compendium
+
+  beforeAll(async () => {
+    installSrdFetch()
+    const { loadCompendium } = await import('../compendium/loader')
+    compendium = await loadCompendium()
+  })
+
+  it('resolves "fire ball" (two tokens) to Fireball via phonetic tier', () => {
+    // The scanner tries phonetic('fireball') (concatenated) which matches Fireball's
+    // phonetic index key.
+    const s = createScanner(compendium)
+    const d = s.scan('fire ball')
+    const fb = d.find((x) => x.entry.name === 'Fireball')
+    expect(fb).toBeDefined()
+    expect(fb!.method).toBe('phonetic')
+  })
+
+  it('resolves "fire bolt" (two tokens) to Fire Bolt via exact tier', () => {
+    // "fire bolt" is the canonical spaced alias and matches at the exact tier.
+    const s = createScanner(compendium)
+    const d = s.scan('fire bolt')
+    const fb = d.find((x) => x.entry.name === 'Fire Bolt')
+    expect(fb).toBeDefined()
+    expect(fb!.method).toBe('exact')
+  })
+
+  it('"fire ball" match is Fireball, not also emitting spurious single tokens', () => {
+    // Greedy: "fire ball" consumed as one match means neither "fire" nor "ball"
+    // re-triggers a spurious detection.
+    const s = createScanner(compendium)
+    const d = s.scan('fire ball')
+    // Must have matched something (non-empty guard so the every() is not vacuously true).
+    expect(d.length).toBeGreaterThan(0)
+    // Only one detection, and it must be Fireball
+    expect(d.every((x) => x.entry.name === 'Fireball')).toBe(true)
+  })
+})
+
+describe('createScanner — real SRD: English in Hebrew', () => {
+  let compendium: Compendium
+
+  beforeAll(async () => {
+    installSrdFetch()
+    const { loadCompendium } = await import('../compendium/loader')
+    compendium = await loadCompendium()
+  })
+
+  it('detects Fireball and Goblin from a mixed Hebrew/English sentence', () => {
+    // "אז אני מטיל fireball על הgoblin" — Hebrew ignored, Latin tokens matched.
+    const s = createScanner(compendium)
+    const d = s.scan('אז אני מטיל fireball על הgoblin')
+    const names = d.map((x) => x.entry.name)
+    expect(names).toContain('Fireball')
+    expect(names).toContain('Goblin')
+  })
+
+  it('does NOT detect anything from a purely Hebrew-script sentence', () => {
+    // Hebrew-script transliterations of game terms are NOT matched — this documents
+    // the current limitation until cross-script matching is implemented.
+    const s = createScanner(compendium)
+    const d = s.scan('מטיל פיירבול') // "casting fireball" but all Hebrew
+    expect(d).toHaveLength(0)
+  })
+
+  it('detects multiple English terms scattered through Hebrew prose', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('השודד מטיל magic missile ואז goblin תוקף')
+    const names = d.map((x) => x.entry.name)
+    expect(names).toContain('Magic Missile')
+    expect(names).toContain('Goblin')
+  })
+})
+
+describe('createScanner — real SRD: possessive / apostrophe handling', () => {
+  let compendium: Compendium
+
+  beforeAll(async () => {
+    installSrdFetch()
+    const { loadCompendium } = await import('../compendium/loader')
+    compendium = await loadCompendium()
+  })
+
+  it('resolves "tasha\'s hideous laughter" to Hideous Laughter', () => {
+    // normalize() strips the possessive "tasha's" -> "tashas"; the scanner skips
+    // that token and then matches "hideous laughter" exactly.
+    const s = createScanner(compendium)
+    const d = s.scan("tasha's hideous laughter")
+    const hl = d.find((x) => x.entry.name === 'Hideous Laughter')
+    expect(hl).toBeDefined()
+    expect(hl!.method).toBe('exact')
+  })
+
+  it('resolves "hunter\'s mark" to Hunter\'s Mark', () => {
+    const s = createScanner(compendium)
+    const d = s.scan("hunter's mark")
+    expect(d.map((x) => x.entry.name)).toContain("Hunter's Mark")
+  })
+})
+
+describe('createScanner — real SRD: phonetic typo tolerance', () => {
+  // Deepgram/Soniox STT produces phonetically similar misspellings; the phonetic
+  // index (double-metaphone) catches these so the match still fires.
+  //
+  // NOTE: The specific phonetic codes asserted below (e.g. "blest" ≅ "blast",
+  // "missael" ≅ "missile") depend on the `double-metaphone` library's output.
+  // If that library is upgraded or replaced, re-verify these expectations and
+  // update them to match the new library's codes.
+  let compendium: Compendium
+
+  beforeAll(async () => {
+    installSrdFetch()
+    const { loadCompendium } = await import('../compendium/loader')
+    compendium = await loadCompendium()
+  })
+
+  it('"magic missael" resolves to Magic Missile via phonetic tier', () => {
+    // missael -> MSL, missile -> MSL: same phonetic code.
+    const s = createScanner(compendium)
+    const d = s.scan('magic missael')
+    const mm = d.find((x) => x.entry.name === 'Magic Missile')
+    expect(mm).toBeDefined()
+    expect(mm!.method).toBe('phonetic')
+    expect(mm!.confidence).toBeLessThan(1.0)
+  })
+
+  it('"magic missal" resolves to Magic Missile via phonetic tier', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('magic missal')
+    const mm = d.find((x) => x.entry.name === 'Magic Missile')
+    expect(mm).toBeDefined()
+    expect(mm!.method).toBe('phonetic')
+  })
+
+  it('"eldritch blest" exercises the phonetic tier (blest/blast share a metaphone code)', () => {
+    // "blest" and "blast" both produce the PLST double-metaphone code, so this
+    // utterance should hit the phonetic tier and match Eldritch Blast. The test
+    // documents that phonetic sensitivity is intentionally broad for near-homophones.
+    const s = createScanner(compendium)
+    const d = s.scan('eldritch blest')
+    // All returned detections must have valid confidence scores.
+    expect(d.every((x) => x.confidence > 0 && x.confidence <= 1.0)).toBe(true)
+    // We expect a phonetic match because blest ≅ blast in double-metaphone.
+    expect(d.some((x) => x.entry.name === 'Eldritch Blast')).toBe(true)
+  })
+})
+
+describe('createScanner — real SRD: single-word stop-list', () => {
+  // Common English words that double as SRD entries must NOT auto-emit on bare
+  // utterance but remain findable via compendium.search.
+  let compendium: Compendium
+
+  beforeAll(async () => {
+    installSrdFetch()
+    const { loadCompendium } = await import('../compendium/loader')
+    compendium = await loadCompendium()
+  })
+
+  it('"shield" alone does not auto-emit', () => {
+    const s = createScanner(compendium)
+    expect(s.scan('shield')).toHaveLength(0)
+  })
+
+  it('"fire" alone does not auto-emit', () => {
+    const s = createScanner(compendium)
+    expect(s.scan('fire')).toHaveLength(0)
+  })
+
+  it('"fly" alone does not auto-emit', () => {
+    const s = createScanner(compendium)
+    expect(s.scan('fly')).toHaveLength(0)
+  })
+
+  it('"light" alone does not auto-emit', () => {
+    const s = createScanner(compendium)
+    expect(s.scan('light')).toHaveLength(0)
+  })
+
+  it('"web" alone does not auto-emit', () => {
+    const s = createScanner(compendium)
+    expect(s.scan('web')).toHaveLength(0)
+  })
+
+  it('"sleep" alone does not auto-emit', () => {
+    const s = createScanner(compendium)
+    expect(s.scan('sleep')).toHaveLength(0)
+  })
+
+  it('stop-listed "shield" IS findable via compendium.search', () => {
+    // Manual search must still work even when auto-emit is suppressed.
+    const results = compendium.search('shield')
+    const names = results.map((e) => e.name)
+    expect(names.some((n) => n.toLowerCase() === 'shield')).toBe(true)
+  })
+
+  it('stop-listed "fly" IS findable via compendium.search', () => {
+    const results = compendium.search('fly')
+    expect(results.some((e) => e.name.toLowerCase() === 'fly')).toBe(true)
+  })
+
+  it('"wall of fire" is NOT stop-listed (multi-word context is specific)', () => {
+    // "fire" is stop-listed for single bare tokens; "wall of fire" is specific.
+    const s = createScanner(compendium)
+    const d = s.scan('wall of fire')
+    expect(d.map((x) => x.entry.name)).toContain('Wall of Fire')
+  })
+})
+
+describe('createScanner — real SRD: greedy longest-match', () => {
+  // When a multi-word span is matched, the individual sub-tokens must NOT also
+  // emit separate detections.
+  let compendium: Compendium
+
+  beforeAll(async () => {
+    installSrdFetch()
+    const { loadCompendium } = await import('../compendium/loader')
+    compendium = await loadCompendium()
+  })
+
+  it('"magic missile" matches as Magic Missile, not emitting "magic" separately', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('magic missile')
+    expect(d.map((x) => x.entry.name)).toContain('Magic Missile')
+    // "magic" alone is stop-listed so it could never fire; but even if it weren't,
+    // greedy consumption would skip it.  Assert no stray single-token hit.
+    expect(d.filter((x) => x.matchedText === 'magic')).toHaveLength(0)
+  })
+
+  it('"eldritch blast" matches as Eldritch Blast; "blast" is not re-scanned', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('eldritch blast')
+    expect(d.map((x) => x.entry.name)).toContain('Eldritch Blast')
+    expect(d.filter((x) => x.matchedText === 'blast')).toHaveLength(0)
+  })
+
+  it('"fireball" and "goblin" both detected with correct matched text', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('fireball goblin')
+    const names = d.map((x) => x.entry.name)
+    expect(names).toContain('Fireball')
+    expect(names).toContain('Goblin')
+    const fb = d.find((x) => x.entry.name === 'Fireball')!
+    expect(fb.matchedText).toBe('fireball')
+  })
+})
+
+describe('createScanner — real SRD: cooldown with injectable now', () => {
+  let compendium: Compendium
+
+  beforeAll(async () => {
+    installSrdFetch()
+    const { loadCompendium } = await import('../compendium/loader')
+    compendium = await loadCompendium()
+  })
+
+  it('suppresses repeat Fireball within cooldown window', () => {
+    const s = createScanner(compendium, { cooldownMs: 5000 })
+    expect(s.scan('fireball', 0)).toHaveLength(1)
+    expect(s.scan('fireball', 2000)).toHaveLength(0) // 2s < 5s cooldown
+    expect(s.scan('fireball', 6000)).toHaveLength(1) // 6s > 5s cooldown
+  })
+
+  it('independent entries have independent cooldowns', () => {
+    const s = createScanner(compendium, { cooldownMs: 5000 })
+    s.scan('fireball', 0)
+    s.scan('magic missile', 0)
+    // Both suppressed at t=1000
+    expect(s.scan('fireball', 1000)).toHaveLength(0)
+    expect(s.scan('magic missile', 1000)).toHaveLength(0)
+    // Both re-emit at t=6000
+    expect(s.scan('fireball', 6000)).toHaveLength(1)
+    expect(s.scan('magic missile', 6000)).toHaveLength(1)
+  })
+
+  it('reset() clears cooldown so entries re-emit immediately', () => {
+    const s = createScanner(compendium, { cooldownMs: 30_000 })
+    s.scan('fireball', 0)
+    expect(s.scan('fireball', 1000)).toHaveLength(0)
+    s.reset()
+    expect(s.scan('fireball', 1000)).toHaveLength(1)
   })
 })

@@ -19,6 +19,7 @@ import type {
 import { createScanner } from '../matching'
 import { createProvider } from '../stt'
 import { DEFAULT_KEYTERM_CANDIDATES } from '../stt/defaultKeyterms'
+import { buildKeyterms } from '../stt/keyterms'
 import { createSession, postTranscript } from './transcript'
 
 /** A detection plus a feed-local id so React keys stay stable across re-renders. */
@@ -136,7 +137,7 @@ export function useAppStore(): AppStore {
     const stt = createProvider(provider)
     sttRef.current = stt
     // Seed keyterms: pinned names first (priority), then the common-term defaults.
-    stt.setKeyterms([...pinnedNamesRef.current, ...defaultKeytermsRef.current])
+    stt.setKeyterms(buildKeyterms(pinnedNamesRef.current, defaultKeytermsRef.current))
 
     // Lazily create a session to attach the transcript to (best-effort).
     if (!sessionIdRef.current) {
@@ -193,10 +194,7 @@ export function useAppStore(): AppStore {
         : [...prev, entry]
       pinnedNamesRef.current = next.map((e) => e.name)
       // Push fresh keyterms to a live provider immediately (pinned + defaults).
-      sttRef.current?.setKeyterms([
-        ...pinnedNamesRef.current,
-        ...defaultKeytermsRef.current,
-      ])
+      sttRef.current?.setKeyterms(buildKeyterms(pinnedNamesRef.current, defaultKeytermsRef.current))
       return next
     })
   }, [])
