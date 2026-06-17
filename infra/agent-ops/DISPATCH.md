@@ -1,8 +1,8 @@
 # DISPATCH — Issue → PR procedure
 
-The dispatcher is the autonomous loop that turns `ready` GitHub issues into pull requests. It runs
-either as a key-env'd local session (on-demand burst) or as a scheduled cloud routine (steady
-progress). See **`OPERATIONS.md`** for the shared rules this procedure depends on: identity &
+The dispatcher is the autonomous loop that turns `ready` GitHub issues into pull requests. It runs as
+a key-env'd local session on this machine — on-demand, or via a local scheduled run (cloud routine
+deferred; see OPERATIONS.md §6). See **`OPERATIONS.md`** for the shared rules this procedure depends on: identity &
 token (§1), label taxonomy & ownership (§2), coordination protocol (§3), role headers (§4),
 escalation policy (§5), run model (§6), repo facts (§7), and Windows/PowerShell gotchas (§8).
 

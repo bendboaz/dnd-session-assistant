@@ -11,8 +11,9 @@ shared contract for identity, label taxonomy, coordination, escalation, and Wind
 gotchas. This document adds only the step-by-step triage flow; it does not redefine anything in
 OPERATIONS.md.
 
-**Runs:** nightly (cloud routine) and on demand (local burst). Date is supplied to each run as
-`$triageDate` (format `YYYY-MM-DD`); never invent a date.
+**Runs:** locally on this machine — on demand or via a local scheduled run that opens a Claude Code
+session (cloud routine deferred; see OPERATIONS.md §6). Date is supplied to each run as `$triageDate`
+(format `YYYY-MM-DD`); never invent a date.
 
 ---
 
@@ -312,7 +313,7 @@ unexpected error; do not silently swallow failures).
 On the first run the backlog is unlabeled — no `ready`, no `priority:*`, no `blocked`. Triage
 still runs the full assessment above. The report does the initial pass over all open issues,
 proposing priorities and ready candidates. This is intentional: the human reviews the report and
-applies labels to bootstrap the labeling state. Subsequent nightly runs will have a richer starting
+applies labels to bootstrap the labeling state. Subsequent runs will have a richer starting
 point.
 
 ---

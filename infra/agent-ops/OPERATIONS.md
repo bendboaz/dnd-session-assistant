@@ -42,7 +42,8 @@ An agent acts as the App **only if `GH_APP_PRIVATE_KEY_PATH` is in its own envir
 orchestrator session does not hold the key. Therefore every loop here runs as **either**:
 - **(local)** a Claude session the user launches with the key env set — the env propagates to spawned
   subagent builders; **or**
-- **(cloud)** a routine with the key as a secret (CI uses `create-github-app-token`).
+- **(cloud)** a routine with the key as a secret (CI uses `create-github-app-token`) — **deferred for
+  now; see §6** (cloud routines bill as API usage).
 
 The token is short-lived (~10 min). Long operations should re-mint rather than cache.
 
@@ -128,14 +129,21 @@ protection, never edit `.github/workflows/*` or secrets to work around a failure
 
 ---
 
-## 6. Run model (hybrid)
+## 6. Run model (local for now)
 
-- **On-demand local burst:** the user launches a key-env'd local session; the dispatcher can run
-  N issues in parallel (subagent builders in git worktrees). Good for clearing a groomed queue fast.
-- **Steady cloud routine:** a scheduled run does ~1 issue per invocation for continuous progress;
-  triage runs nightly. Cloud runs obtain the token via `create-github-app-token`.
+All loops currently run **locally on this machine via the Claude Code app**, so they bill as Claude
+Code (subscription) usage — not API usage.
 
-Both modes follow the exact same procedures and the rules above.
+- **On-demand local burst:** the user launches a key-env'd local session (see §1); the dispatcher can
+  run N issues in parallel (subagent builders in git worktrees). Good for clearing a groomed queue fast.
+- **Recurring locally:** for periodic dispatch/triage, use a local scheduled run that opens a Claude
+  Code session on this machine (e.g. the `schedule` skill / a Windows scheduled task) — **not** a
+  cloud routine.
+
+**Cloud routines are deferred.** A scheduled *cloud* routine is billed as **API usage**, not
+chat/subscription usage, so we are not using one for now. (CI workflows like `ai-review` still run in
+the cloud on the API key — that is separate and unaffected.) If we revisit cloud later, cloud runs
+would mint the token via `actions/create-github-app-token` and follow these same procedures unchanged.
 
 ---
 
