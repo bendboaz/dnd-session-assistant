@@ -34,13 +34,13 @@ export interface FeedItem extends Detection {
 const DEFAULT_PROVIDER: SttProviderName =
   import.meta.env.VITE_STT_PROVIDER === 'deepgram' ? 'deepgram' : 'soniox'
 
-const PINNED_IDS_KEY = 'dnd-assistant:pinned-ids'
+export const PINNED_IDS_KEY = 'dnd-assistant:pinned-ids'
 
 /**
  * Read the persisted pinned entry IDs from localStorage.
  * Returns an empty array on any failure (private mode, quota errors, parse errors).
  */
-function readPinnedIds(): string[] {
+export function readPinnedIds(): string[] {
   try {
     const raw = localStorage.getItem(PINNED_IDS_KEY)
     if (!raw) return []
@@ -56,12 +56,26 @@ function readPinnedIds(): string[] {
  * Write the current pinned entry IDs to localStorage.
  * Silently swallows errors (private mode, quota exceeded, etc.).
  */
-function writePinnedIds(ids: string[]): void {
+export function writePinnedIds(ids: string[]): void {
   try {
     localStorage.setItem(PINNED_IDS_KEY, JSON.stringify(ids))
   } catch {
     // best-effort
   }
+}
+
+/**
+ * Resolve an ordered list of stored IDs to CompendiumEntry objects, silently
+ * dropping any IDs that are no longer present in `entries` (stale references).
+ * Pure function — suitable for unit testing without a React environment.
+ */
+export function resolvePinnedEntries(
+  entries: CompendiumEntry[],
+  ids: string[],
+): CompendiumEntry[] {
+  if (ids.length === 0) return []
+  const byId = new Map(entries.map((e) => [e.id, e]))
+  return ids.map((id) => byId.get(id)).filter((e): e is CompendiumEntry => e !== undefined)
 }
 
 let feedCounter = 0
@@ -129,15 +143,10 @@ export function useAppStore(): AppStore {
         )
 
         // Rehydrate pinned entries from localStorage. Stale IDs (no longer in
-        // the compendium) are silently dropped — c.exact() returns [] for them.
+        // the compendium) are silently dropped.
         const storedIds = readPinnedIds()
         if (storedIds.length > 0) {
-          // Resolve each stored ID to a CompendiumEntry via the flat entries
-          // array. Build a map once so the lookup is O(1) per stored id.
-          const byId = new Map(c.entries.map((e) => [e.id, e]))
-          const rehydrated = storedIds
-            .map((id) => byId.get(id))
-            .filter((e): e is NonNullable<typeof e> => e !== undefined)
+          const rehydrated = resolvePinnedEntries(c.entries, storedIds)
           if (rehydrated.length > 0) {
             setPinned(rehydrated)
             pinnedNamesRef.current = rehydrated.map((e) => e.name)
