@@ -185,6 +185,7 @@ would mint the token via `actions/create-github-app-token` and follow these same
   and falsely fails `$?`.
 - **Avoid** `gh --jq` with `\(...)` interpolation and here-strings — they mangle. Prefer
   `gh ... --json ... | ConvertFrom-Json`, and post bodies via `--body-file` or repeated `-m`.
+- No `&&` chaining — use `;` or `if ($?) { ... }`.
 
 ---
 
@@ -204,4 +205,3 @@ is **MERGED or CLOSED with no open PR**; it never touches `main`, the current br
   (`fetch --prune`). Deleting the actual *remote* head branch on merge is handled by the repo setting
   **Settings → General → "Automatically delete head branches"** — keep that enabled so merged agent
   branches disappear server-side automatically.
-- No `&&` chaining — use `;` or `if ($?) { ... }`.

@@ -5,7 +5,7 @@
 .DESCRIPTION
   Idempotent and safe. Removes ONLY branches/worktrees whose PR is MERGED or CLOSED and
   that have NO open PR. It NEVER touches `main`, the currently checked-out branch, or any
-  branch that still has an open PR — so mid-flight work (a branch whose PR is still open,
+  branch that still has an open PR -- so mid-flight work (a branch whose PR is still open,
   or a branch that has no PR yet) is always preserved.
 
   It keys off PR *state*, not git ancestry, so it works regardless of merge strategy
@@ -24,15 +24,20 @@
 #>
 param(
   [string]$Repo     = "bendboaz/dnd-session-assistant",
-  [string]$RepoRoot = "D:\Users\Boaz\CodeProjects\dnd-session-assistant",
+  # Default to the repo root derived from this script's location (infra/agent-ops/),
+  # so the script is portable and never operates on a stale hard-coded path.
+  [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
   [switch]$DryRun
 )
 
+# gh is not always on PATH on this machine (see OPERATIONS.md section 8); fall back to PATH elsewhere.
 $gh = "C:\Program Files\GitHub CLI\gh.exe"
+if (-not (Test-Path $gh)) { $gh = "gh" }
 function Step($m) { Write-Host "[cleanup] $m" }
 
 # 0. Prune stale remote-tracking refs and worktree admin entries (dirs deleted out-of-band).
 git -C $RepoRoot fetch --prune | Out-Null
+if ($LASTEXITCODE -ne 0) { Step "WARNING: 'git fetch --prune' failed (exit $LASTEXITCODE); continuing with possibly stale remote info." }
 git -C $RepoRoot worktree prune
 
 # 1. Classify branches by PR state. "finished" = has a MERGED/CLOSED PR and NO open PR.
@@ -68,6 +73,5 @@ foreach ($lb in $localBranches) {
   }
 }
 
-$suffix = if ($DryRun) { ' (dry run — no changes made)' } else { '' }
-Step "done.$suffix"
-if ($current -ne 'main') { Step "note: current branch is '$current' (skipped); run from 'main' to prune it once its PR merges." }
+if ($DryRun) { Step "done (dry run; no changes made)." } else { Step "done." }
+if ($current -ne 'main') { Step "note: current branch '$current' was skipped; run from 'main' to prune it once its PR merges." }
