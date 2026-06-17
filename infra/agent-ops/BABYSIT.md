@@ -359,3 +359,17 @@ if ($allGreen -and $mergeable) {
 
 Send a `PushNotification` to the human: `"PR #N '<title>' is green and ready to merge. <url>"`.
 **The babysitter never merges.** The human merges.
+
+---
+
+## 8. Cleanup
+
+If you created a git worktree to make a fix, **remove it when done** with the PR:
+
+```powershell
+git worktree remove <worktree-path> --force
+```
+
+The branch itself stays until its PR is merged/closed — it is then pruned automatically by
+`cleanup.ps1` (OPERATIONS.md §9), which the dispatcher runs at the start of each run (or run it
+on demand: `pwsh infra/agent-ops/cleanup.ps1`).
