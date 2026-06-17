@@ -214,9 +214,9 @@ must be self-contained and include:
 - Use the **PowerShell tool** exclusively; never Bash
 - Read the issue body from `gh issue view $n --repo $repo --json body,title` for Scope/Files/Acceptance
 - Implement strictly from the issue's Scope, owned Files, and Acceptance Criteria
-- **Contract files are READ-ONLY** — must not be edited: `src/lib/text.ts`,
-  `src/compendium/types.ts`, `src/matching/types.ts`, `src/stt/types.ts`, and the public
-  `Compendium` interface in `src/compendium/loader.ts`
+- **Contract files are READ-ONLY** — see OPERATIONS.md §7 *Contract files (frozen)* for the exact,
+  authoritative definition (fully-frozen files, the `loader.ts` public-interface nuance, and the
+  test-file carve-out). The subagent must follow that definition, not a looser/narrower paraphrase.
 - Follow all conventions in the repo `CLAUDE.md` (Tailwind theme CSS vars, no `any`, relative
   imports, mobile-first)
 - Run verification (Step 6) before reporting done
@@ -334,9 +334,8 @@ check, never touch `.github/workflows/*` or secrets.
 Use this path when:
 - Verification fails in a way needing real logic (not a mechanical fix)
 - The issue is ambiguous or under-specified (missing scope, conflicting requirements)
-- Implementation would require editing a **contract file** (`src/lib/text.ts`,
-  `src/compendium/types.ts`, `src/matching/types.ts`, `src/stt/types.ts`, or the public
-  `Compendium` interface)
+- Implementation would require editing a **contract file** (per OPERATIONS.md §7 *Contract files
+  (frozen)*)
 - Anything else at the boundary of autonomous capability
 
 ### 8.1 Open a draft PR (if there is partial work to preserve)

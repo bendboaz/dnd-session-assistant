@@ -117,8 +117,7 @@ and send a `PushNotification` with a one-line summary + link. Then **stop** on t
 
 Escalate (don't guess) when:
 - The issue/PR is ambiguous, under-specified, or needs a product decision.
-- A change touches a **contract file** (`src/lib/text.ts`, `src/compendium/types.ts`,
-  `src/matching/types.ts`, `src/stt/types.ts`, or the public `Compendium` interface) — these are frozen.
+- A change touches a **contract file** (see §7 — *Contract files (frozen)* — for the exact definition).
 - Verification fails in a way that needs real logic (not a mechanical fix).
 - A rebase has non-trivial conflicts.
 - A per-run safety cap is hit (e.g. babysitter commit-cap).
@@ -147,13 +146,26 @@ Both modes follow the exact same procedures and the rules above.
   `enforce_admins=false` (admin human can merge; the App cannot).
 - **Required checks** come from `.github/workflows/ci.yml`: `frontend` (`npm ci` → `npx tsc --noEmit`
   → `npm run build` → `npm test`) and `backend` (`pip install -r requirements.txt pytest` → `pytest`
-  if tests present). A PR is mergeable only when both pass.
+  if tests present). A PR is mergeable only when both pass. A third job `agent-tools` runs
+  `pytest` over `infra/agent-ops/` (covers `agent_token.py`) — it runs but is not a required check.
 - **AI review** (`.github/workflows/ai-review.yml` + `.github/scripts/ai_review.py`) runs on every PR
   sync, is conversation-aware, and posts as `🔎 [Reviewing Agent]`.
 - **Local verification a builder must pass before opening a PR:** `npx tsc --noEmit`, `npm run build`,
   `npm test`; for backend changes, `pytest` from `backend/`.
 - **Conventions** (enforced by review): Tailwind theme CSS vars not hard-coded hex; no `any` to silence
   the compiler; relative imports within `src/`; mobile-first. See repo `CLAUDE.md`.
+- **Contract files (frozen)** — the canonical definition (mirrors repo `CLAUDE.md` / `docs/DESIGN.md`;
+  this is the single source of truth for the procedures, which must not restate a looser or narrower
+  version):
+  - **Fully frozen** (no edits to exported types/signatures): `src/lib/text.ts`,
+    `src/compendium/types.ts`, `src/matching/types.ts`, `src/stt/types.ts`.
+  - **`src/compendium/loader.ts`** — only the **public `Compendium` interface signature**
+    (`loadCompendium()` return type; `exact`/`phonetic`/`search` signatures) and the `CompendiumEntry`
+    + payload shapes are frozen. The loader's **internal implementation** (alias generation, index
+    building, normalization helpers) may evolve freely.
+  - **Carve-out:** test files (`*.test.ts` and test-only helpers) are **not** contract-frozen and may
+    be added/edited anywhere.
+  - Any change to a frozen type/signature goes through `docs/DESIGN.md` + the human first — escalate.
 
 ---
 

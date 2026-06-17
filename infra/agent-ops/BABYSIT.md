@@ -134,7 +134,7 @@ if ($failedRun) {
 | Flaky/transient: network timeout, rate limit, random seed, no change to source | Re-run the job: `& $gh run rerun $runId --repo bendboaz/dnd-session-assistant --failed` |
 | `frontend` build error from a real logic problem | **Escalate** |
 | `backend` test failure from a real logic problem | **Escalate** |
-| Contract file touched (`src/lib/text.ts`, `src/compendium/types.ts`, `src/matching/types.ts`, `src/stt/types.ts`, public `Compendium` interface) | **Escalate** — do not attempt to fix |
+| Contract file touched (per OPERATIONS.md §7 *Contract files (frozen)*) | **Escalate** — do not attempt to fix |
 
 For a re-run, wait for the run to complete before moving on to step 3c. A re-run does NOT count
 against the commit-cap (no push is involved).

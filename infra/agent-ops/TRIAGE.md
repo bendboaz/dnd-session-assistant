@@ -179,12 +179,13 @@ Note: the dispatcher caps concurrent open PRs at **3** (OPERATIONS.md §3). A ba
 
 ### Find or create the report issue
 
-The report lives in **exactly one** open issue titled `🗂️ Backlog triage`.
+The report lives in **exactly one** open issue whose canonical title is `🗂️ Backlog triage`. Match
+it by the **plain substring `Backlog triage`** (not the emoji) so the lookup is robust regardless of
+how the title renders; always create it *with* the emoji.
 
 ```powershell
-$reportIssue = $backlog | Where-Object { $_.title -match "Backlog triage" }
-# (Re-check $issues, not $backlog, in case the report was excluded above)
-$reportIssue = $issues | Where-Object { $_.title -match "Backlog triage" }
+# Reuse $issues from step 2 (the report may have been excluded from $backlog there)
+$reportIssue  = $issues | Where-Object { $_.title -match "Backlog triage" }
 $reportNumber = if ($reportIssue) { $reportIssue[0].number } else { $null }
 ```
 

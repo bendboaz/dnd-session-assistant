@@ -41,3 +41,18 @@ jobs:
           else
             echo "No backend tests yet; skipping."
           fi
+
+  agent-tools:
+    # The agent-ops token minter lives in infra/, outside the backend pytest path,
+    # so it gets its own small job. Deps are mocked in the tests but must import.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/agent-ops
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - run: pip install "pyjwt[crypto]" requests pytest
+      - run: pytest
