@@ -34,6 +34,36 @@ export interface FeedItem extends Detection {
 const DEFAULT_PROVIDER: SttProviderName =
   import.meta.env.VITE_STT_PROVIDER === 'deepgram' ? 'deepgram' : 'soniox'
 
+const PINNED_IDS_KEY = 'dnd-assistant:pinned-ids'
+
+/**
+ * Read the persisted pinned entry IDs from localStorage.
+ * Returns an empty array on any failure (private mode, quota errors, parse errors).
+ */
+function readPinnedIds(): string[] {
+  try {
+    const raw = localStorage.getItem(PINNED_IDS_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((v): v is string => typeof v === 'string')
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Write the current pinned entry IDs to localStorage.
+ * Silently swallows errors (private mode, quota exceeded, etc.).
+ */
+function writePinnedIds(ids: string[]): void {
+  try {
+    localStorage.setItem(PINNED_IDS_KEY, JSON.stringify(ids))
+  } catch {
+    // best-effort
+  }
+}
+
 let feedCounter = 0
 
 export interface AppStore {
@@ -97,6 +127,28 @@ export function useAppStore(): AppStore {
         defaultKeytermsRef.current = DEFAULT_KEYTERM_CANDIDATES.filter(
           (n) => c.exact(n).length > 0,
         )
+
+        // Rehydrate pinned entries from localStorage. Stale IDs (no longer in
+        // the compendium) are silently dropped — c.exact() returns [] for them.
+        const storedIds = readPinnedIds()
+        if (storedIds.length > 0) {
+          // Resolve each stored ID to a CompendiumEntry via the flat entries
+          // array. Build a map once so the lookup is O(1) per stored id.
+          const byId = new Map(c.entries.map((e) => [e.id, e]))
+          const rehydrated = storedIds
+            .map((id) => byId.get(id))
+            .filter((e): e is NonNullable<typeof e> => e !== undefined)
+          if (rehydrated.length > 0) {
+            setPinned(rehydrated)
+            pinnedNamesRef.current = rehydrated.map((e) => e.name)
+            // Seed keyterms immediately so the first startListening call gets
+            // the persisted pins even before the user interacts.
+            sttRef.current?.setKeyterms(
+              buildKeyterms(pinnedNamesRef.current, defaultKeytermsRef.current),
+            )
+          }
+        }
+
         setLoading(false)
       })
       .catch((err: unknown) => {
@@ -193,6 +245,8 @@ export function useAppStore(): AppStore {
         ? prev.filter((e) => e.id !== entry.id)
         : [...prev, entry]
       pinnedNamesRef.current = next.map((e) => e.name)
+      // Persist the updated pinned ID set so it survives page reloads.
+      writePinnedIds(next.map((e) => e.id))
       // Push fresh keyterms to a live provider immediately (pinned + defaults).
       sttRef.current?.setKeyterms(buildKeyterms(pinnedNamesRef.current, defaultKeytermsRef.current))
       return next
