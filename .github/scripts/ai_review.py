@@ -23,8 +23,13 @@ Review the diff for:
   (c) project conventions (see CLAUDE.md):
       - Tailwind theme CSS variables, not hard-coded hex colors;
       - no `any` used merely to silence the TypeScript compiler;
-      - the contract files must not be edited: src/lib/text.ts, src/compendium/*,
-        src/matching/types.ts, src/stt/types.ts.
+      - the contract files must not be edited: src/lib/text.ts, src/compendium/types.ts,
+        src/matching/types.ts, src/stt/types.ts. For src/compendium/loader.ts only the public
+        `Compendium` interface signature + CompendiumEntry/payload shapes are frozen — the loader's
+        internal implementation may evolve. Specifically: FLAG any change to the exported
+        `Compendium`, `loadCompendium`, or `CompendiumEntry` signatures in loader.ts as a contract
+        break; internal-only changes (alias generation, indexing, helpers) are fine.
+        Test files (*.test.ts) are exempt.
 
 Be concise and specific (file + line where useful). Group findings by severity.
 If everything looks good, say so briefly rather than inventing issues."""
