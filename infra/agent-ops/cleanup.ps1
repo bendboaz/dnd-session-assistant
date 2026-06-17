@@ -41,7 +41,8 @@ if ($LASTEXITCODE -ne 0) { Step "WARNING: 'git fetch --prune' failed (exit $LAST
 git -C $RepoRoot worktree prune
 
 # 1. Classify branches by PR state. "finished" = has a MERGED/CLOSED PR and NO open PR.
-$prs = & $gh pr list --repo $Repo --state all --json headRefName,state | ConvertFrom-Json
+# --limit 500: gh defaults to 30, which would hide older finished branches on a busy repo.
+$prs = & $gh pr list --repo $Repo --state all --limit 500 --json headRefName,state | ConvertFrom-Json
 $openHeads     = @($prs | Where-Object { $_.state -eq 'OPEN' } | ForEach-Object { $_.headRefName })
 $finishedHeads = @(
   $prs | Where-Object { $_.state -eq 'MERGED' -or $_.state -eq 'CLOSED' } |
@@ -69,7 +70,11 @@ foreach ($lb in $localBranches) {
   if ($lb -eq 'main' -or $lb -eq $current) { continue }
   if ($finishedHeads -contains $lb) {
     if ($DryRun) { Step "would delete local branch: $lb" }
-    else { Step "deleting local branch: $lb"; git -C $RepoRoot branch -D $lb | Out-Null }
+    else {
+      Step "deleting local branch: $lb"
+      git -C $RepoRoot branch -D $lb | Out-Null
+      if ($LASTEXITCODE -ne 0) { Step "WARNING: failed to delete local branch '$lb' (exit $LASTEXITCODE)." }
+    }
   }
 }
 
