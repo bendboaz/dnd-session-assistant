@@ -22,7 +22,7 @@ guarantee, enforced by GitHub, not by agent good behavior.
   read, print, log, or commit it. (A global hook blocks reading it; keep it that way.)
 - **Minter:** [`agent_token.py`](agent_token.py) reads `GH_APP_ID` / `GH_APP_INSTALLATION_ID` /
   `GH_APP_PRIVATE_KEY_PATH` and prints a short-lived `ghs_` installation token. Deps:
-  `pip install "pyjwt[crypto]" requests` (present in the backend venv).
+  `infra/agent-ops/requirements.txt` (`pyjwt[crypto]` + `requests`; also present in the backend venv).
 
 ### Getting `GH_TOKEN`
 - **Local (PowerShell):**
