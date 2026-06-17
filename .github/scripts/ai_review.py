@@ -12,7 +12,7 @@ import sys
 
 from anthropic import Anthropic
 
-MODEL = "claude-opus-4-8"  # intended current model — not a placeholder
+MODEL = "claude-sonnet-4-6"  # intended current model — not a placeholder
 MAX_DIFF_CHARS = 120_000  # guard against huge PRs blowing the context window
 
 CHECKLIST = """You are reviewing a pull request for the "D&D Session Assistant" project.
