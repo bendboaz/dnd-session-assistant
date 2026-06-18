@@ -161,10 +161,46 @@ if ($openAgentPRCount -ge $cap) {
     exit 0
 }
 
-# How many slots remain
+# Build several issues in parallel this run, up to the available slots.
 $slots = $cap - $openAgentPRCount
-$toDispatch = $ordered | Select-Object -First $slots
+$batch = @($ordered | Select-Object -First $slots)
 ```
+
+---
+
+## 3b. Independence filter — what to parallelize
+
+Build only a **mutually-independent** subset of `$batch` in parallel. Two issues are independent iff
+the files they will touch are **disjoint** — parallel PRs that edit the same files conflict on merge
+(and risk incoherent changes). For each candidate, read its declared scope
+(`gh issue view N --json body` → the **Relevant files** / **Scope** section) and extract the paths it
+will change. Greedily, highest-priority first: seed the selected set with the top candidate; add each
+later candidate only if its file set is **disjoint** from the union of already-selected sets **and**
+from the files of any in-flight agent PR. If a candidate declares no usable file list, or the overlap
+is uncertain, **leave it out** of this run's parallel batch — it becomes a top, solo pick on a later
+run. This independence judgement is the single non-deterministic step; priority order, the cap, and
+file extraction are deterministic.
+
+```powershell
+# Greedy independence filter. $fileSet[N] = repo-relative paths issue N declares it will touch.
+# (The dispatcher applies judgement when an issue's file list is fuzzy; when in doubt, exclude.)
+$selected      = @()
+$claimedFiles  = @()   # union of files for already-selected issues (+ any in-flight agent PRs)
+foreach ($issue in $batch) {
+    $files = Get-IssueFiles $issue        # parse "Relevant files"/"Scope" from the issue body
+    if ($selected.Count -eq 0) { $selected += $issue; $claimedFiles += $files; continue }
+    $overlaps = $files | Where-Object { $claimedFiles -contains $_ }
+    if ($files.Count -gt 0 -and -not $overlaps) {
+        $selected += $issue; $claimedFiles += $files   # disjoint -> safe to build in parallel
+    }
+    # else: overlapping or unknown scope -> defer to a later run
+}
+$toDispatch = $selected                    # >= 1 issue
+```
+
+The issues in `$toDispatch` are independent, so Steps 4–7 run for them **in parallel** — each gets its
+own worktree + branch and its own implementing subagent, spawned concurrently. A single run thus opens
+up to `$slots` PRs, but only for non-conflicting issues.
 
 ---
 
@@ -202,7 +238,7 @@ foreach ($issue in $toDispatch) {
 ```powershell
 $branch = "claude/agent/issue-$n"
 $repoRoot = "D:\Users\Boaz\CodeProjects\dnd-session-assistant"
-$worktreePath = "D:\Users\Boaz\CodeProjects\dnd-session-assistant-worktrees\issue-$n"
+$worktreePath = "D:\Users\Boaz\CodeProjects\dnd-wt\issue-$n"
 
 # Fetch latest main
 git -C $repoRoot fetch origin main
