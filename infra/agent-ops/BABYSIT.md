@@ -1,375 +1,189 @@
-# PR Babysitter — step-by-step procedure
+# PR Babysitter — review-response loop
 
-Keeps agent-authored PRs on `claude/agent/issue-*` green and mergeable.
-**Mechanical fixes only. Escalate anything substantive.**
+Drives each open `claude/agent/issue-*` PR to a **clean, mergeable review** — **including substantive
+code changes/additions**, not just mechanical nits — using a **bounded, one-iteration-per-run loop**.
+Escalates only when genuinely blocked (contract-file change, product decision, iteration cap, or going
+in circles).
 
-Shared contract (identity, labels, role headers, escalation, Windows gotchas): [`OPERATIONS.md`](OPERATIONS.md).
-This document is the step-by-step procedure that builds on top of it.
+Shared contract (identity, labels, role headers, escalation, Windows gotchas, contract-file
+definition): [`OPERATIONS.md`](OPERATIONS.md). This doc is the step-by-step procedure on top of it.
+
+## Run model — one iteration per run
+
+Each scheduled run performs **at most one round** of fixes per PR: read the current state → make the
+needed changes → verify → **one push** → reply. That push triggers a fresh CI + AI-review; the **next**
+scheduled run sees the new review round and continues. Convergence is therefore spread across runs, and
+the **iteration cap counts rounds across runs** (§4), not pushes within a run. This keeps each run short
+and crash-safe (no long-held session polling CI).
 
 ---
 
 ## 1. Preconditions
 
-Before any babysitter action the GitHub App token must be in the environment and verified.
-
 ```powershell
-# Set App env vars (the key path lives outside the repo)
-$env:GH_APP_ID             = "4070567"
+$env:GH_APP_ID              = "4070567"
 $env:GH_APP_INSTALLATION_ID = "140736715"
 $env:GH_APP_PRIVATE_KEY_PATH = "<absolute path to the .pem, outside the repo>"
-
-# Mint a short-lived installation token and hand it to gh + git
 $env:GH_TOKEN = (python infra/agent-ops/agent_token.py)
-
-# Verify — output must show the App (dnd-agent), not the human account
-& "C:\Program Files\GitHub CLI\gh.exe" auth status
+& "C:\Program Files\GitHub CLI\gh.exe" auth status   # must show the App, not the human
 ```
-
-The token expires in ~10 minutes. Re-mint with another `python infra/agent-ops/agent_token.py` call
-if a run is long (see §5 commit-cap).
+Token is short-lived (~10 min); re-mint if a run runs long. (When launched by `run-babysit.ps1`, the
+token is already minted and `GH_TOKEN` is set.)
 
 ---
 
 ## 2. Select PRs
 
-List all open PRs whose head branch matches `claude/agent/issue-*`, along with their CI check
-status, review state, and mergeability.
+List open PRs whose head branch matches `claude/agent/issue-*` (the autonomous lane — never touch
+interactive `claude/...` branches), with CI, review, and mergeability state.
 
 ```powershell
-$gh = "C:\Program Files\GitHub CLI\gh.exe"
-
-# Fetch open agent PRs
-$prs = & $gh pr list `
-  --repo bendboaz/dnd-session-assistant `
-  --state open `
-  --json number,title,headRefName,baseRefName,mergeable,reviewDecision,statusCheckRollup `
-  | ConvertFrom-Json
-
-# Filter to agent branches only — never touch interactive claude/... branches
-$agentPRs = $prs | Where-Object { $_.headRefName -match '^claude/agent/issue-' }
-
-# Inspect each PR
-foreach ($pr in $agentPRs) {
-    Write-Host "PR #$($pr.number)  $($pr.headRefName)  mergeable=$($pr.mergeable)  review=$($pr.reviewDecision)"
-    foreach ($check in $pr.statusCheckRollup) {
-        Write-Host "  check: $($check.name)  status=$($check.status)  conclusion=$($check.conclusion)"
-    }
-}
+$gh   = "C:\Program Files\GitHub CLI\gh.exe"
+$slug = "bendboaz/dnd-session-assistant"
+$prs  = & $gh pr list --repo $slug --state open `
+  --json number,headRefName,mergeStateStatus,reviewDecision,statusCheckRollup,labels | ConvertFrom-Json
+$agentPRs = $prs | Where-Object { $_.headRefName -match '^claude/agent/issue-' -and ($_.labels.name -notcontains 'needs-attention') }
 ```
-
-Key fields:
-- `mergeable`: `MERGEABLE` | `CONFLICTING` | `UNKNOWN`
-- `reviewDecision`: `APPROVED` | `CHANGES_REQUESTED` | `REVIEW_REQUIRED` | `""` (none)
-- `statusCheckRollup[].name`: look for `frontend` and `backend`
-- `statusCheckRollup[].conclusion`: `SUCCESS` | `FAILURE` | `CANCELLED` | `null` (in-progress)
-
-Process each PR in the order returned (highest-priority work is dispatched first). For each PR,
-work through steps 3a → 3b → 3c in order, applying the commit-cap (§4) throughout.
+Skip PRs already labelled `needs-attention` (a human owns them until they clear it). A PR **needs a
+round** this run if any of: `mergeStateStatus` in `BEHIND/DIRTY/UNSTABLE`; a required check
+(`frontend`/`backend`) concluded failure; `reviewDecision = CHANGES_REQUESTED`; **or** there is a
+`🔎 [Reviewing Agent]` comment with no newer `🛠️ [Implementing Agent]` / `👤 [Human]` reply (an
+unaddressed review round). The wrapper's deterministic gate (`run-babysit.ps1`) checks this before
+launching, so if you are running you have work to do.
 
 ---
 
-## 3. Per-PR actions
+## 3. One iteration: rebase → fix CI → address review
 
-### 3a. Behind main? — rebase
-
-```powershell
-$gh = "C:\Program Files\GitHub CLI\gh.exe"
-
-# Check mergeability; CONFLICTING also means behind-and-conflicting
-$prData = & $gh pr view $prNumber `
-  --repo bendboaz/dnd-session-assistant `
-  --json mergeable,headRefName `
-  | ConvertFrom-Json
-
-if ($prData.mergeable -eq "CONFLICTING") {
-    # Fetch and rebase
-    git fetch origin main
-    git checkout $prData.headRefName
-    git rebase origin/main
-    # ... resolve conflicts if any, then:
-    git push --force-with-lease origin $prData.headRefName
-}
-```
-
-**Conflict triage:**
-
-| Conflict type | Action |
-|---|---|
-| Lockfile (`package-lock.json`, `poetry.lock`) | Delete the conflicted file, re-run `npm ci` or `pip install`, stage result, continue rebase |
-| Import-order or whitespace-only | Accept incoming or current (either is correct), continue rebase |
-| Generated files (`.css` output, build artifacts) | Regenerate with `npm run build`, stage, continue rebase |
-| Any real logic change with overlapping edits | **Escalate** (§Escalation below), `git rebase --abort`, leave the PR |
-
-After a successful rebase+push, decrement the commit-cap counter for this PR (§4).
-
-### 3b. CI failed? — read logs and fix or escalate
+Do all work for a PR in a **dedicated worktree** so the main checkout is never disturbed:
 
 ```powershell
-$gh = "C:\Program Files\GitHub CLI\gh.exe"
-
-# Get the latest workflow run for this PR
-$runs = & $gh run list `
-  --repo bendboaz/dnd-session-assistant `
-  --branch $headRefName `
-  --json databaseId,name,status,conclusion `
-  | ConvertFrom-Json
-
-# Pick the most recent failed run
-$failedRun = $runs | Where-Object { $_.conclusion -eq "failure" } | Select-Object -First 1
-
-if ($failedRun) {
-    # Show the failed jobs and their logs
-    & $gh run view $failedRun.databaseId `
-      --repo bendboaz/dnd-session-assistant `
-      --log-failed
-}
+$n = <issue number>; $branch = "claude/agent/issue-$n"
+$repoRoot = "D:\Users\Boaz\CodeProjects\dnd-session-assistant"
+$wt       = "D:\Users\Boaz\CodeProjects\dnd-wt\issue-$n"   # matches the allowlist + --add-dir grant
+git -C $repoRoot fetch origin main
+if (-not (Test-Path $wt)) { git -C $repoRoot worktree add $wt $branch }
+Set-Location $wt
 ```
 
-**Failure triage:**
+### 3a. Rebase if behind
+```powershell
+git rebase origin/main
+```
+Resolve **trivial** conflicts (lockfiles → regenerate; import-order/whitespace; generated CSS → rebuild).
+A conflict involving **real overlapping logic** → escalate (§6), `git rebase --abort`.
 
-| Failure pattern | Action |
-|---|---|
-| ESLint / Prettier / tsc error in a file the PR touched | Fix the specific lint/type error, push (mechanical) |
-| Type error: `any` used to silence the compiler | Replace with the correct explicit type (mechanical if the type is obvious from context) |
-| Flaky/transient: network timeout, rate limit, random seed, no change to source | Re-run the job: `& $gh run rerun $runId --repo bendboaz/dnd-session-assistant --failed` |
-| `frontend` build error from a real logic problem | **Escalate** |
-| `backend` test failure from a real logic problem | **Escalate** |
-| Contract file touched (per OPERATIONS.md §7 *Contract files (frozen)*) | **Escalate** — do not attempt to fix |
+### 3b. Fix failing CI
+Read the failing job (`gh run view <id> --log-failed`). **Fix the actual cause** — lint/format/type
+errors, *and* genuine logic/test failures within the linked issue's scope. Re-run only for clearly
+transient/flaky failures. Escalate (§6) only if the fix needs a contract-file change or a product
+decision.
 
-For a re-run, wait for the run to complete before moving on to step 3c. A re-run does NOT count
-against the commit-cap (no push is involved).
-
-After a mechanical fix+push, decrement the commit-cap counter for this PR (§4).
-
-### 3c. AI-review nits — read thread, fix or escalate
-
-Fetch the full PR comment thread and locate all `🔎 **[Reviewing Agent]**` comments.
+### 3c. Address the AI review (the core)
+Fetch the thread; for every `🔎 [Reviewing Agent]` finding **not yet addressed** by a newer
+`🛠️`/`👤` reply, **make the change it asks for** — mechanical *or* substantive (real code, new tests,
+refactors) — staying **within the linked issue's scope** and the **contract-file rules**
+(OPERATIONS.md §7). This is the key difference from a mechanical-only babysitter: you resolve the
+review, you don't punt it.
 
 ```powershell
-$gh = "C:\Program Files\GitHub CLI\gh.exe"
-
-$thread = & $gh pr view $prNumber `
-  --repo bendboaz/dnd-session-assistant `
-  --json comments `
-  | ConvertFrom-Json
-
-# Print all comments with their authors for manual inspection
-foreach ($c in $thread.comments) {
-    Write-Host "--- $($c.author.login) ---"
-    Write-Host $c.body
-    Write-Host ""
-}
+$thread = (& $gh pr view $n --repo $slug --json comments | ConvertFrom-Json).comments
+$thread | ForEach-Object { "--- $($_.author.login) $($_.createdAt) ---`n$($_.body)`n" }
 ```
 
-For each `[Reviewing Agent]` point that has NOT already been addressed by a `🛠️ [Implementing Agent]`
-or `👤 [Human]` reply:
+- For a finding you **can** resolve in-scope: implement it, keeping changes minimal and matching repo
+  conventions (`CLAUDE.md`: no `any` to silence the compiler, theme CSS vars, etc.). If a finding is
+  large/independent, prefer a focused, correct change over a sprawling one.
+- For a finding you **should not** act on (out of the issue's scope, a real product/design choice, or a
+  pre-existing issue the reviewer flagged as not-introduced-here): don't force it — note it in the reply
+  and, if it blocks merge, escalate (§6). A reviewer "looks good / no blocking issues" needs no code
+  change — just acknowledge it (which advances the thread so the gate won't re-fire).
 
-**Mechanical nit (auto-fix and push):**
-
-| Nit type | Examples |
-|---|---|
-| Dead/unused code | Unused import, commented-out block, unreachable branch |
-| Hard-coded hex color | Replace with `var(--color-*)` from `src/index.css` |
-| `any` used only to silence the compiler | Replace with the correct explicit type |
-| Trivially-missing test | A test for a pure function with obvious inputs/outputs |
-
-Fix in code, push, then post a reply comment:
-
+### 3d. Verify, then ONE push
+Before pushing, all required checks must pass locally:
 ```powershell
-# Write the comment body to a temp file (avoid shell escaping issues)
-$body = @"
-🛠️ **[Implementing Agent]**
-
-Addressed the following review nits:
-
-- <bullet: what was fixed and where>
-- <bullet: ...>
-"@
-
-$tmpFile = [System.IO.Path]::GetTempFileName()
-[System.IO.File]::WriteAllText($tmpFile, $body)
-
-& $gh pr comment $prNumber `
-  --repo bendboaz/dnd-session-assistant `
-  --body-file $tmpFile
-
-Remove-Item $tmpFile
+npm ci; npx tsc --noEmit; npm run build; npm test     # + pytest in backend/ for backend changes
 ```
-
-After fix+push, decrement the commit-cap counter for this PR (§4).
-
-**Substantive/logic nit (escalate):**
-
-If the review comment requires a product decision, redesign, real logic change, or touches a
-contract file — post an acknowledgement and escalate (see §Escalation below).
-
+Then commit and push **once** (this run's single round):
 ```powershell
-$body = @"
-🛠️ **[Implementing Agent]**
-
-Acknowledging the review comment. This point requires substantive input and has been escalated:
-
-> <paste the reviewer's point>
-
-Adding `needs-attention` and notifying the human.
-"@
+git push --force-with-lease origin $branch    # (plain push if no rebase happened)
 ```
+
+### 3e. Reply with a role-headed summary
+Post one `🛠️ [Implementing Agent]` comment (via `--body-file`) listing, per review finding: what you
+changed (file/why) or — for anything you intentionally left — the reason. This both records progress
+and lets the conversation-aware reviewer skip resolved points next round.
 
 ---
 
-## 4. Commit-cap (churn guard)
+## 4. Iteration cap + circular / no-progress guard
 
-**Default cap: 3 pushes per PR per babysitter run.**
+The loop is **bounded by rounds across runs**, not pushes within a run.
 
-Track pushes (rebase push, fix push) against this cap. Re-runs (CI re-trigger with no push) do not
-count.
+- **Round count** = number of `🛠️ [Implementing Agent]` reply comments already on the PR. **Cap = 4.**
+- If rounds **≥ cap** and the PR is still not clean → **escalate** (§6): "addressed N rounds; not
+  converged." Stop.
+- **Circular / no-progress:** if the newest review **re-raises a finding a prior `🛠️` reply claimed to
+  resolve**, or successive rounds keep surfacing new issues with no net reduction → you are likely going
+  in circles → **escalate**. Do **not** re-apply a fix the thread shows was already made (see §5).
 
-```powershell
-# Pseudocode — track per PR in a hashtable
-$pushCount = @{}
-$CAP = 3
-
-function Register-Push($prNumber) {
-    if (-not $pushCount.ContainsKey($prNumber)) { $pushCount[$prNumber] = 0 }
-    $pushCount[$prNumber]++
-    if ($pushCount[$prNumber] -ge $CAP) {
-        # Stop all further work on this PR and escalate
-        Invoke-Escalate -PrNumber $prNumber -Reason "Commit-cap of $CAP reached; PR still not green."
-        return $false   # caller should skip remaining steps for this PR
-    }
-    return $true
-}
-```
-
-If the cap is hit: escalate (§Escalation), stop touching that PR, move on to the next PR in the
-list. This prevents infinite fix-push loops.
-
-Re-mint the token if you have been running for more than ~8 minutes:
-
-```powershell
-$env:GH_TOKEN = (python infra/agent-ops/agent_token.py)
-```
+This is the "solve it / hit the cap / detect circling" bound: the babysitter keeps iterating across
+runs until the review is clean, but never indefinitely.
 
 ---
 
 ## 5. AI-review timing race (issue #13)
 
-The AI review workflow (`ai-review.yml`) fetches the PR comment thread at **job start**. A reply
-you post moments before a new push triggers a fresh review run may not appear in that run's thread
-snapshot — so the reviewer might re-raise a point you just addressed.
-
-**Do not loop fighting a stale review.** After addressing nits and pushing:
-- Either re-trigger a fresh AI review run manually:
-  ```powershell
-  $gh = "C:\Program Files\GitHub CLI\gh.exe"
-  & $gh workflow run ai-review.yml `
-    --repo bendboaz/dnd-session-assistant `
-    --ref $headRefName
-  ```
-- Or rely on the next-sync conversation-aware pass — `ai_review.py` reads the prior thread and
-  skips already-addressed points (`[Implementing Agent]` replies are recognized).
-
-If the next review run re-raises an already-replied-to point, do **not** fix it again. Confirm the
-reply is in the thread, note the race, and let the following run resolve it.
+`ai-review.yml` snapshots the thread at job start, so a reply posted right before a new push may be
+missed and a point re-raised. After pushing + replying, either rely on the next-sync conversation-aware
+pass (it reads `🛠️`/`👤` replies and skips resolved points), or re-trigger:
+```powershell
+& $gh workflow run ai-review.yml --repo $slug --ref $branch
+```
+If a run re-raises an already-resolved point, **confirm the reply/fix is in the thread and do not
+re-fix it** — distinguish this (a stale-snapshot artifact) from genuine circling (§4) before escalating.
 
 ---
 
-## 6. Escalation
+## 6. Escalation (narrowed)
 
-Escalate when the babysitter hits something outside mechanical scope. From OPERATIONS.md §5:
+Escalate — `needs-attention` label on the PR + a `🛠️ [Implementing Agent]` comment stating exactly
+what's blocked + a `PushNotification` — then **stop on this PR** and move on. Escalate **only** when:
+
+- A fix would require editing a **contract file** (OPERATIONS.md §7) or `.github/workflows/*`.
+- The feedback needs a genuine **product/design decision**, or is **out of the linked issue's scope**.
+- **Iteration cap** (§4) reached, or **circular / no-progress** detected.
+- A rebase conflict involves **real overlapping logic**.
 
 ```powershell
-$gh = "C:\Program Files\GitHub CLI\gh.exe"
-
-function Invoke-Escalate {
-    param(
-        [int]$PrNumber,
-        [string]$Reason
-    )
-
-    # 1. Add needs-attention label to the PR (not the issue)
-    & $gh pr edit $PrNumber `
-      --repo bendboaz/dnd-session-assistant `
-      --add-label "needs-attention"
-
-    # 2. Post a role-headed comment explaining what is blocked
-    $body = @"
-🛠️ **[Implementing Agent]**
-
-Escalating — human attention required.
-
-**Reason:** $Reason
-
-The babysitter has stopped working on this PR. Please review and clear `needs-attention` when resolved.
-"@
-    $tmpFile = [System.IO.Path]::GetTempFileName()
-    [System.IO.File]::WriteAllText($tmpFile, $body)
-    & $gh pr comment $PrNumber --repo bendboaz/dnd-session-assistant --body-file $tmpFile
-    Remove-Item $tmpFile
-
-    # 3. Send a PushNotification (one-line summary + PR URL)
-    $prUrl = "https://github.com/bendboaz/dnd-session-assistant/pull/$PrNumber"
-    # (Use the PushNotification tool available in the Claude Code session)
-}
+& $gh pr edit $n --repo $slug --add-label "needs-attention"
+$body = "🛠️ **[Implementing Agent]**`n`nEscalating — human attention required.`n`n**Reason:** <...>`n`n<what's blocked / what you tried>"
+$tmp = [System.IO.Path]::GetTempFileName(); [System.IO.File]::WriteAllText($tmp, $body)
+& $gh pr comment $n --repo $slug --body-file $tmp; Remove-Item $tmp
+# then send a PushNotification with a one-line summary + the PR URL
 ```
 
-Escalate (never attempt to fix) when:
-- Rebase conflict involves real logic overlap
-- CI failure requires real logic or a product decision
-- Review comment is substantive or touches a contract file
-- Commit-cap is reached and the PR is still not green
-- Any ambiguity about whether a fix is truly mechanical
-
-After escalating, move on to the next PR. Do not leave the babysitter blocked on a single PR.
-
-**Hard limits (never, ever):**
-- Never approve a PR
-- Never merge a PR
-- Never force-past a failing required check (`frontend` or `backend`)
-- Never edit `.github/workflows/*`
-- Never change branch protection or secrets
-- Never edit issues or their labels except adding `needs-attention` (on the PR, not the issue)
-- Never touch a PR whose branch does not match `claude/agent/issue-*`
+**Hard limits (never):** approve a PR; merge; force-past a failing required check; edit
+`.github/workflows/*`; change branch protection / rulesets / secrets; edit issues or their labels
+(except adding `needs-attention` on the PR); touch a branch that isn't `claude/agent/issue-*`.
 
 ---
 
-## 7. Done state — merge-ready notification
+## 7. Done state — merge-ready
 
-A PR is merge-ready when:
-1. Both `frontend` and `backend` checks are `SUCCESS`
-2. No open unaddressed `[Reviewing Agent]` nits (all have `[Implementing Agent]` or `[Human]` replies)
-3. `mergeable` is `MERGEABLE` (not `CONFLICTING`)
-
-```powershell
-$gh = "C:\Program Files\GitHub CLI\gh.exe"
-
-$prData = & $gh pr view $prNumber `
-  --repo bendboaz/dnd-session-assistant `
-  --json number,title,url,mergeable,statusCheckRollup `
-  | ConvertFrom-Json
-
-$allGreen = ($prData.statusCheckRollup | Where-Object { $_.conclusion -ne "SUCCESS" }).Count -eq 0
-$mergeable = $prData.mergeable -eq "MERGEABLE"
-
-if ($allGreen -and $mergeable) {
-    Write-Host "PR #$($prData.number) is merge-ready: $($prData.url)"
-    # Send PushNotification: "PR #N '<title>' is green and ready to merge. <url>"
-}
-```
-
-Send a `PushNotification` to the human: `"PR #N '<title>' is green and ready to merge. <url>"`.
-**The babysitter never merges.** The human merges.
+A PR is merge-ready when: `frontend` + `backend` checks are `SUCCESS`; `mergeStateStatus` is `CLEAN`
+(not behind/dirty); and there are no unaddressed `🔎 [Reviewing Agent]` findings (the latest review is
+clean or every point has a `🛠️`/`👤` reply). When that holds, post a brief `🛠️` "merge-ready" note and
+send a `PushNotification`: `"PR #N '<title>' is green + review-clean, ready to merge. <url>"`.
+**The babysitter never merges — the human does.**
 
 ---
 
 ## 8. Cleanup
 
-If you created a git worktree to make a fix, **remove it when done** with the PR:
-
+Remove the worktree you created when done with this run's PR:
 ```powershell
-git worktree remove <worktree-path> --force
+Set-Location $repoRoot
+git worktree remove "D:\Users\Boaz\CodeProjects\dnd-wt\issue-$n" --force
 ```
-
-The branch itself stays until its PR is merged/closed — it is then pruned automatically by
-`cleanup.ps1` (OPERATIONS.md §9), which the dispatcher runs at the start of each run (or run it
-on demand: `pwsh infra/agent-ops/cleanup.ps1`).
+The branch persists until its PR merges/closes, then is pruned by `cleanup.ps1` (OPERATIONS.md §9).
