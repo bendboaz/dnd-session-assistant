@@ -46,12 +46,12 @@ def no_firestore_env() -> Generator[None, None, None]:
 @pytest.fixture()
 def client(tmp_storage: Path, no_firestore_env: None) -> TestClient:
     """FastAPI TestClient backed by local JSONL storage (no Firestore, no real keys)."""
-    # Import after env is patched so init_storage() sees the right vars.
-    # Re-import main each time to pick up a fresh storage instance.
+    # Pop main from the module cache so re-import re-runs init_storage() with the
+    # patched env, giving each test a fresh storage instance.
     import importlib
-    import main as main_mod
 
-    importlib.reload(main_mod)
+    sys.modules.pop("main", None)
+    main_mod = importlib.import_module("main")
     return TestClient(main_mod.app)
 
 

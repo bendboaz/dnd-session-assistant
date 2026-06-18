@@ -1,4 +1,4 @@
-﻿"""Tests for /api/stt-token endpoint.
+"""Tests for /api/stt-token endpoint.
 
 All real HTTP calls to Soniox/Deepgram are replaced with unittest.mock so no
 live credentials are needed.
@@ -6,12 +6,11 @@ live credentials are needed.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
-from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 _BACKEND_DIR = Path(__file__).parent.parent
@@ -34,6 +33,16 @@ def _make_async_client_ctx(response: MagicMock) -> MagicMock:
     """Wrap a mock response in an async context manager that mimics httpx.AsyncClient."""
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=response)
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=mock_client)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return ctx
+
+
+def _make_async_client_ctx_raising(exc: Exception) -> MagicMock:
+    """Wrap a transport exception in an async context manager."""
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(side_effect=exc)
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=mock_client)
     ctx.__aexit__ = AsyncMock(return_value=False)
@@ -74,10 +83,11 @@ class TestDevFakeToken:
         assert resp.status_code == 200
         assert resp.json()["provider"] == "deepgram"
 
-    def test_no_fake_token_without_key_returns_503(self, client) -> None:
+    def test_no_fake_token_without_key_returns_503(self, client, monkeypatch) -> None:
         # DEV_FAKE_TOKEN not set + no real key -> 503.
-        for key in ("SONIOX_API_KEY", "DEEPGRAM_API_KEY", "DEV_FAKE_TOKEN"):
-            os.environ.pop(key, None)
+        monkeypatch.delenv("SONIOX_API_KEY", raising=False)
+        monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
 
         resp = client.get("/api/stt-token?provider=soniox")
         assert resp.status_code == 503
@@ -98,10 +108,10 @@ class TestResponseShape:
         data = resp.json()
         assert set(data.keys()) == {"provider", "token", "expiresIn"}
 
-    def test_api_key_never_in_response_soniox(self, client) -> None:
+    def test_api_key_never_in_response_soniox(self, client, monkeypatch) -> None:
         # Even when a real key is set, it must NOT appear in the response body.
-        os.environ["SONIOX_API_KEY"] = "sk-secret-soniox-key"
-        os.environ.pop("DEV_FAKE_TOKEN", None)
+        monkeypatch.setenv("SONIOX_API_KEY", "sk-secret-soniox-key")
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
 
         mock_resp = _mock_httpx_response(
             200, {"api_key": "short-lived-soniox-token", "expires_at": None}
@@ -109,23 +119,19 @@ class TestResponseShape:
         with patch("httpx.AsyncClient", return_value=_make_async_client_ctx(mock_resp)):
             resp = client.get("/api/stt-token?provider=soniox")
 
-        os.environ.pop("SONIOX_API_KEY", None)
-
         assert resp.status_code == 200
         body_text = resp.text
         assert "sk-secret-soniox-key" not in body_text
 
-    def test_api_key_never_in_response_deepgram(self, client) -> None:
-        os.environ["DEEPGRAM_API_KEY"] = "sk-secret-deepgram-key"
-        os.environ.pop("DEV_FAKE_TOKEN", None)
+    def test_api_key_never_in_response_deepgram(self, client, monkeypatch) -> None:
+        monkeypatch.setenv("DEEPGRAM_API_KEY", "sk-secret-deepgram-key")
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
 
         mock_resp = _mock_httpx_response(
             200, {"access_token": "short-lived-deepgram-token", "expires_in": 300}
         )
         with patch("httpx.AsyncClient", return_value=_make_async_client_ctx(mock_resp)):
             resp = client.get("/api/stt-token?provider=deepgram")
-
-        os.environ.pop("DEEPGRAM_API_KEY", None)
 
         assert resp.status_code == 200
         assert "sk-secret-deepgram-key" not in resp.text
@@ -136,60 +142,54 @@ class TestResponseShape:
 # ---------------------------------------------------------------------------
 
 class TestProviderErrors:
-    def test_soniox_503_on_missing_key(self, client) -> None:
-        os.environ.pop("SONIOX_API_KEY", None)
-        os.environ.pop("DEV_FAKE_TOKEN", None)
+    def test_soniox_503_on_missing_key(self, client, monkeypatch) -> None:
+        monkeypatch.delenv("SONIOX_API_KEY", raising=False)
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
         resp = client.get("/api/stt-token?provider=soniox")
         assert resp.status_code == 503
         # Detail should be human-readable.
         assert "SONIOX_API_KEY" in resp.json()["detail"]
 
-    def test_deepgram_503_on_missing_key(self, client) -> None:
-        os.environ.pop("DEEPGRAM_API_KEY", None)
-        os.environ.pop("DEV_FAKE_TOKEN", None)
+    def test_deepgram_503_on_missing_key(self, client, monkeypatch) -> None:
+        monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
         resp = client.get("/api/stt-token?provider=deepgram")
         assert resp.status_code == 503
         assert "DEEPGRAM_API_KEY" in resp.json()["detail"]
 
-    def test_deepgram_403_grant_scope_error_returns_502(self, client) -> None:
+    def test_deepgram_403_grant_scope_error_returns_502(self, client, monkeypatch) -> None:
         # Deepgram returns 403 when the key lacks grant scope.
-        os.environ["DEEPGRAM_API_KEY"] = "valid-but-no-scope-key"
-        os.environ.pop("DEV_FAKE_TOKEN", None)
+        monkeypatch.setenv("DEEPGRAM_API_KEY", "valid-but-no-scope-key")
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
 
         mock_resp = _mock_httpx_response(403, {"error": "Forbidden"})
         with patch("httpx.AsyncClient", return_value=_make_async_client_ctx(mock_resp)):
             resp = client.get("/api/stt-token?provider=deepgram")
-
-        os.environ.pop("DEEPGRAM_API_KEY", None)
 
         assert resp.status_code == 502
         detail = resp.json()["detail"]
         # Must be a human-readable message, not a raw status code dump.
         assert isinstance(detail, str) and len(detail) > 10
 
-    def test_soniox_upstream_error_returns_502(self, client) -> None:
-        os.environ["SONIOX_API_KEY"] = "real-soniox-key"
-        os.environ.pop("DEV_FAKE_TOKEN", None)
+    def test_soniox_upstream_error_returns_502(self, client, monkeypatch) -> None:
+        monkeypatch.setenv("SONIOX_API_KEY", "real-soniox-key")
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
 
         mock_resp = _mock_httpx_response(500, {})
         with patch("httpx.AsyncClient", return_value=_make_async_client_ctx(mock_resp)):
             resp = client.get("/api/stt-token?provider=soniox")
 
-        os.environ.pop("SONIOX_API_KEY", None)
-
         assert resp.status_code == 502
 
-    def test_valid_soniox_response_shape(self, client) -> None:
-        os.environ["SONIOX_API_KEY"] = "real-soniox-key"
-        os.environ.pop("DEV_FAKE_TOKEN", None)
+    def test_valid_soniox_response_shape(self, client, monkeypatch) -> None:
+        monkeypatch.setenv("SONIOX_API_KEY", "real-soniox-key")
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
 
         mock_resp = _mock_httpx_response(
             200, {"api_key": "temp-soniox-123", "expires_at": "2099-01-01T00:00:00Z"}
         )
         with patch("httpx.AsyncClient", return_value=_make_async_client_ctx(mock_resp)):
             resp = client.get("/api/stt-token?provider=soniox")
-
-        os.environ.pop("SONIOX_API_KEY", None)
 
         assert resp.status_code == 200
         data = resp.json()
@@ -198,9 +198,9 @@ class TestProviderErrors:
         assert isinstance(data["expiresIn"], int)
         assert set(data.keys()) == {"provider", "token", "expiresIn"}
 
-    def test_valid_deepgram_response_shape(self, client) -> None:
-        os.environ["DEEPGRAM_API_KEY"] = "real-deepgram-key"
-        os.environ.pop("DEV_FAKE_TOKEN", None)
+    def test_valid_deepgram_response_shape(self, client, monkeypatch) -> None:
+        monkeypatch.setenv("DEEPGRAM_API_KEY", "real-deepgram-key")
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
 
         mock_resp = _mock_httpx_response(
             200, {"access_token": "temp-deepgram-456", "expires_in": 300}
@@ -208,11 +208,30 @@ class TestProviderErrors:
         with patch("httpx.AsyncClient", return_value=_make_async_client_ctx(mock_resp)):
             resp = client.get("/api/stt-token?provider=deepgram")
 
-        os.environ.pop("DEEPGRAM_API_KEY", None)
-
         assert resp.status_code == 200
         data = resp.json()
         assert data["provider"] == "deepgram"
         assert data["token"] == "temp-deepgram-456"
         assert data["expiresIn"] == 300
         assert set(data.keys()) == {"provider", "token", "expiresIn"}
+
+    def test_soniox_network_error_returns_502(self, client, monkeypatch) -> None:
+        # A transport-level exception (e.g. ConnectError) must yield 502, not 500.
+        monkeypatch.setenv("SONIOX_API_KEY", "real-soniox-key")
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
+
+        network_exc = httpx.ConnectError("connection refused")
+        with patch("httpx.AsyncClient", return_value=_make_async_client_ctx_raising(network_exc)):
+            resp = client.get("/api/stt-token?provider=soniox")
+
+        assert resp.status_code == 502
+
+    def test_deepgram_network_error_returns_502(self, client, monkeypatch) -> None:
+        monkeypatch.setenv("DEEPGRAM_API_KEY", "real-deepgram-key")
+        monkeypatch.delenv("DEV_FAKE_TOKEN", raising=False)
+
+        network_exc = httpx.ConnectError("connection refused")
+        with patch("httpx.AsyncClient", return_value=_make_async_client_ctx_raising(network_exc)):
+            resp = client.get("/api/stt-token?provider=deepgram")
+
+        assert resp.status_code == 502

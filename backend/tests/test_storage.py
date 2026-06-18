@@ -151,7 +151,9 @@ class TestFirestoreFallback:
         import storage as storage_mod
         importlib.reload(storage_mod)
 
-        with caplog.at_level(logging.WARNING, logger="dnd.storage"):
+        # Drop the logger= filter so caplog captures records even if the logger
+        # name ever changes (storage.py uses "dnd.storage" explicitly).
+        with caplog.at_level(logging.WARNING):
             store = storage_mod.init_storage()
 
         assert isinstance(store, storage_mod.LocalStorage)
@@ -160,21 +162,17 @@ class TestFirestoreFallback:
                    for r in caplog.records)
 
     def test_bad_firestore_creds_falls_back_to_local(
-        self, tmp_storage: Path, caplog
+        self, tmp_storage: Path, caplog, monkeypatch
     ) -> None:
-        # If Firestore is "configured" but instantiation fails, we must fall back
-        # to local storage with a warning rather than crashing.
-        os.environ["GCP_PROJECT"] = "nonexistent-project-for-test"
+        # If Firestore is "configured" but instantiation fails (bad/absent credentials
+        # in CI), init_storage() must fall back to LocalStorage with a warning.
+        monkeypatch.setenv("GCP_PROJECT", "nonexistent-project-for-test")
         import storage as storage_mod
         importlib.reload(storage_mod)
 
-        with caplog.at_level(logging.WARNING, logger="dnd.storage"):
-            # The Firestore client may raise on an invalid project/credentials.
-            # init_storage() should catch any exception and fall back.
+        with caplog.at_level(logging.WARNING):
             store = storage_mod.init_storage()
 
-        os.environ.pop("GCP_PROJECT", None)
-
-        # Whether Firestore init succeeds or not depends on the environment;
-        # what matters is that we do NOT crash and return a working storage.
-        assert isinstance(store, (storage_mod.LocalStorage, storage_mod.FirestoreStorage))
+        # In CI there are no GCP credentials, so firestore.Client() raises and we
+        # always land here.  Assert the specific fallback type so the test is meaningful.
+        assert isinstance(store, storage_mod.LocalStorage)
