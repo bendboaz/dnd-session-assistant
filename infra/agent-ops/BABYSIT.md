@@ -81,10 +81,12 @@ decision.
 
 ### 3c. Address the AI review (the core)
 Fetch the thread; for every `🔎 [Reviewing Agent]` finding **not yet addressed** by a newer
-`🛠️`/`👤` reply, **make the change it asks for** — mechanical *or* substantive (real code, new tests,
-refactors) — staying **within the linked issue's scope** and the **contract-file rules**
-(OPERATIONS.md §7). This is the key difference from a mechanical-only babysitter: you resolve the
-review, you don't punt it.
+`🛠️`/`👤` reply, **make the change it asks for** — mechanical *or* substantive (real code, new tests).
+Prefer staying **within the linked issue's scope**; you MAY change code **outside** that scope **only
+when it is directly required to resolve a review finding** (e.g. fix production code so a flagged gap
+becomes testable) — keep such changes **minimal and consistent with existing patterns**, never broad
+refactors. Always obey the **contract-file rules** (OPERATIONS.md §7). This is the key difference from a
+mechanical-only babysitter: you resolve the review, you don't punt it.
 
 ```powershell
 $thread = (& $gh pr view $n --repo $slug --json comments | ConvertFrom-Json).comments
@@ -94,8 +96,9 @@ $thread | ForEach-Object { "--- $($_.author.login) $($_.createdAt) ---`n$($_.bod
 - For a finding you **can** resolve in-scope: implement it, keeping changes minimal and matching repo
   conventions (`CLAUDE.md`: no `any` to silence the compiler, theme CSS vars, etc.). If a finding is
   large/independent, prefer a focused, correct change over a sprawling one.
-- For a finding you **should not** act on (out of the issue's scope, a real product/design choice, or a
-  pre-existing issue the reviewer flagged as not-introduced-here): don't force it — note it in the reply
+- For a finding you **should not** act on (needs a genuine product/design decision, is pre-existing /
+  flagged not-introduced-here, or would need broad out-of-scope changes beyond a minimal required fix):
+  don't force it — note it in the reply
   and, if it blocks merge, escalate (§6). A reviewer "looks good / no blocking issues" needs no code
   change — just acknowledge it (which advances the thread so the gate won't re-fire).
 
