@@ -102,20 +102,39 @@ $thread | ForEach-Object { "--- $($_.author.login) $($_.createdAt) ---`n$($_.bod
   and, if it blocks merge, escalate (§6). A reviewer "looks good / no blocking issues" needs no code
   change — just acknowledge it (which advances the thread so the gate won't re-fire).
 
-### 3d. Verify, then ONE push
+### 3d. Verify locally
 Before pushing, all required checks must pass locally:
 ```powershell
 npm ci; npx tsc --noEmit; npm run build; npm test     # + pytest in backend/ for backend changes
 ```
-Then commit and push **once** (this run's single round):
+
+### 3e. Reply with a role-headed summary — BEFORE pushing
+Post one `🛠️ [Implementing Agent]` comment (via `--body-file`) **before** the push, listing per
+review finding: what you changed (file/why) or — for anything you intentionally left — the reason.
+
+Posting the reply before the push is the primary mitigation for the AI-review timing race (§5):
+the push triggers the `ai-review.yml` workflow, which fetches the comment thread shortly after
+the job starts. If the reply is already in the thread at that point, the reviewer sees it and
+skips the resolved finding. Then wait briefly for GitHub to propagate the comment before pushing:
+
 ```powershell
+# Post the reply first (before push — see §5)
+$tmp = [System.IO.Path]::GetTempFileName() + ".md"
+@"
+🛠️ **[Implementing Agent]**
+
+Addressed findings from the latest review:
+<!-- fill in: per-finding summary -->
+"@ | Set-Content -Path $tmp -Encoding utf8
+& $gh pr comment $n --repo $slug --body-file $tmp
+Remove-Item $tmp -ErrorAction SilentlyContinue
+
+# Brief propagation buffer so the comment is visible before the review job starts
+Start-Sleep -Seconds 15
+
+# Then push — triggers fresh CI + AI-review
 git push --force-with-lease origin $branch    # (plain push if no rebase happened)
 ```
-
-### 3e. Reply with a role-headed summary
-Post one `🛠️ [Implementing Agent]` comment (via `--body-file`) listing, per review finding: what you
-changed (file/why) or — for anything you intentionally left — the reason. This both records progress
-and lets the conversation-aware reviewer skip resolved points next round.
 
 ---
 
@@ -135,16 +154,23 @@ runs until the review is clean, but never indefinitely.
 
 ---
 
-## 5. AI-review timing race (issue #13)
+## 5. AI-review timing race
 
-`ai-review.yml` snapshots the thread at job start, so a reply posted right before a new push may be
-missed and a point re-raised. After pushing + replying, either rely on the next-sync conversation-aware
-pass (it reads `🛠️`/`👤` replies and skips resolved points), or re-trigger:
+`ai-review.yml` snapshots the comment thread shortly after a push triggers the job. If the reply
+arrives after that snapshot, the reviewer may re-raise points that were already addressed.
+
+**Primary fix (§3e):** post the `🛠️ [Implementing Agent]` reply **before** pushing, then wait
+`Start-Sleep -Seconds 15` before the `git push`. This ensures the comment is already in GitHub's
+API when the review job fetches it. This covers all babysitter re-run cases (where the PR already
+exists). For the initial PR push there is no existing review thread, so there is no race to fix.
+
+**If a run still re-raises an already-resolved point** (residual stale snapshot or very fast job
+start), confirm the reply is in the thread and **do not re-fix it** — distinguish this (a
+stale-snapshot artifact) from genuine circling (§4) before escalating. Optionally re-trigger the
+review to get a clean read:
 ```powershell
 & $gh workflow run ai-review.yml --repo $slug --ref $branch
 ```
-If a run re-raises an already-resolved point, **confirm the reply/fix is in the thread and do not
-re-fix it** — distinguish this (a stale-snapshot artifact) from genuine circling (§4) before escalating.
 
 ---
 
