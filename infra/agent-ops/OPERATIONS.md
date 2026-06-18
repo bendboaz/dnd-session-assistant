@@ -186,3 +186,22 @@ would mint the token via `actions/create-github-app-token` and follow these same
 - **Avoid** `gh --jq` with `\(...)` interpolation and here-strings — they mangle. Prefer
   `gh ... --json ... | ConvertFrom-Json`, and post bodies via `--body-file` or repeated `-m`.
 - No `&&` chaining — use `;` or `if ($?) { ... }`.
+
+---
+
+## 9. Cleanup — finished branches & worktrees
+
+Agent runs create one worktree + branch per issue (`claude/agent/issue-N`). These must be reaped or
+they pile up. The mechanism: **[`cleanup.ps1`](cleanup.ps1)** — idempotent, safe, and keys off **PR
+state** (not git ancestry, so squash-merges are handled). It removes only branches/worktrees whose PR
+is **MERGED or CLOSED with no open PR**; it never touches `main`, the current branch, mid-flight work
+(open PR), or a branch that has no PR yet.
+
+- **Self-healing:** the **dispatcher runs `cleanup.ps1` at the start of every run** (so stale state is
+  reaped before new work); the **babysitter removes its worktree when done** with a PR.
+- **Standalone / on demand:** `pwsh infra/agent-ops/cleanup.ps1 -DryRun` to preview, then without
+  `-DryRun` to prune. Safe to run anytime.
+- **Remote branches:** `cleanup.ps1` prunes local worktrees + branches and stale remote-tracking refs
+  (`fetch --prune`). Deleting the actual *remote* head branch on merge is handled by the repo setting
+  **Settings → General → "Automatically delete head branches"** — keep that enabled so merged agent
+  branches disappear server-side automatically.

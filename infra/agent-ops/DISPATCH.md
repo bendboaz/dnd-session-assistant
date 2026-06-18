@@ -58,6 +58,18 @@ The backend venv has the required deps (`pyjwt[crypto]`, `requests`). Activate i
 
 ---
 
+## 1b. Cleanup first (self-healing)
+
+Before selecting work, prune finished branches/worktrees from prior runs so stale state never
+accumulates (see OPERATIONS.md §9). Safe + idempotent — it only removes branches/worktrees whose PR
+is merged/closed:
+
+```powershell
+pwsh infra/agent-ops/cleanup.ps1        # or: -DryRun to preview
+```
+
+---
+
 ## 2. Select work
 
 ### 2.1 Fetch open issues and filter to dispatchable
