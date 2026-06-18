@@ -29,6 +29,18 @@ interface DeepgramResults {
   channel?: { alternatives?: DeepgramAlternative[] }
 }
 
+/**
+ * Build the WebSocket subprotocols for Deepgram authentication. Exported so
+ * tests can assert the correct `['bearer', token]` pair without a live socket.
+ *
+ * Deepgram short-lived grant tokens authenticate via the `bearer` subprotocol.
+ * The `token` subprotocol is for long-lived raw API keys and must NOT be used
+ * here (those never reach the client).
+ */
+export function buildSocketProtocols(token: string): string[] {
+  return ['bearer', token]
+}
+
 export class DeepgramProvider extends BaseWsProvider {
   constructor() {
     const spec: ProviderSpec = {
@@ -38,7 +50,7 @@ export class DeepgramProvider extends BaseWsProvider {
 
       // Deepgram's short-lived grant token is a bearer JWT, presented via the
       // `bearer` subprotocol (the `token` subprotocol is for raw API keys).
-      socketProtocols: (token) => ['bearer', token],
+      socketProtocols: (token) => buildSocketProtocols(token),
 
       // Keyterms are in the URL, so capture them at clamp time for socketUrl.
       clampKeyterms: (terms) => {
