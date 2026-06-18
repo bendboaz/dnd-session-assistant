@@ -96,3 +96,6 @@ prefix its PR comments with a role header so the AI review (and human readers) c
 - Confirm first: `git commit`/`git push` (propose the message), `pip install`/`npm install` (new
   deps), `docker compose up/down`, any deletion. (Within an approved task, the listed installs are
   pre-authorized.)
+- **PR reviewer:** always assign the repo owner as reviewer when opening a PR. Resolve the owner
+  with `gh repo view --json owner --jq .owner.login` and pass it as `--reviewer <owner>` to
+  `gh pr create`. Do not open a PR without assigning this reviewer.
