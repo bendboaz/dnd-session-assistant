@@ -101,6 +101,12 @@ $thread | ForEach-Object { "--- $($_.author.login) $($_.createdAt) ---`n$($_.bod
   don't force it — note it in the reply
   and, if it blocks merge, escalate (§6). A reviewer "looks good / no blocking issues" needs no code
   change — just acknowledge it (which advances the thread so the gate won't re-fire).
+- **Cover the whole finding, and verify before claiming.** When a finding cites a pattern that recurs
+  across files or lines ("same in X and Y", "throughout", "both files"), fix **all** instances, not
+  just the cited one. Before stating in your `🛠️` reply that a finding is addressed, **verify the change
+  is actually present and effective** (re-read the file / run the relevant check) — report only what you
+  verified, never a partial or assumed fix. A partial or over-claimed fix just bounces back next round
+  (and burns an iteration toward the cap).
 
 ### 3d. Verify locally
 Before pushing, all required checks must pass locally:
@@ -179,7 +185,8 @@ review to get a clean read:
 Escalate — `needs-attention` label on the PR + a `🛠️ [Implementing Agent]` comment stating exactly
 what's blocked + a `PushNotification` — then **stop on this PR** and move on. Escalate **only** when:
 
-- A fix would require editing a **contract file** (OPERATIONS.md §7) or `.github/workflows/*`.
+- A fix would require editing a **contract file** (OPERATIONS.md §7), `.github/workflows/*`, or the
+  **orchestrator-only** playbook `infra/agent-ops/**` (OPERATIONS.md §3 rule 6).
 - The feedback needs a genuine **product/design decision**, or is **out of the linked issue's scope**.
 - **Iteration cap** (§4) reached, or **circular / no-progress** detected.
 - A rebase conflict involves **real overlapping logic**.
@@ -193,8 +200,9 @@ $tmp = [System.IO.Path]::GetTempFileName(); [System.IO.File]::WriteAllText($tmp,
 ```
 
 **Hard limits (never):** approve a PR; merge; force-past a failing required check; edit
-`.github/workflows/*`; change branch protection / rulesets / secrets; edit issues or their labels
-(except adding `needs-attention` on the PR); touch a branch that isn't `claude/agent/issue-*`.
+`.github/workflows/*` or `infra/agent-ops/**` (orchestrator-only); change branch protection / rulesets
+/ secrets; edit issues or their labels (except adding `needs-attention` on the PR); touch a branch that
+isn't `claude/agent/issue-*`.
 
 ---
 
