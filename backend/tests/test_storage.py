@@ -159,6 +159,7 @@ class TestFirestoreFallback:
 
             assert isinstance(store, storage_mod.LocalStorage)
             # A warning must have been logged so ops know they are not in Firestore mode.
+            assert len(caplog.records) > 0
             assert any("local" in r.message.lower() or "jsonl" in r.message.lower()
                        for r in caplog.records)
         finally:
@@ -182,6 +183,9 @@ class TestFirestoreFallback:
             # In CI there are no GCP credentials, so firestore.Client() raises and we
             # always land here.  Assert the specific fallback type so the test is meaningful.
             assert isinstance(store, storage_mod.LocalStorage)
+            assert len(caplog.records) > 0
+            assert any("local" in r.message.lower() or "jsonl" in r.message.lower()
+                       for r in caplog.records)
         finally:
             # Remove the reloaded module so subsequent tests get a fresh import
             # under their own environment rather than this test's GCP_PROJECT env.
