@@ -66,6 +66,10 @@ loop's self-report — **verify against GitHub + git state**. (`$gh = "C:\Progra
 8. **Triage freshness.** The `🗂️ Backlog triage` issue (#18) should be recently updated; its `ready`
    candidates reflect the current backlog.
 
+8b. **Review-nit ledger.** Scan the `🧹 Review nit ledger` issue (the babysitter logs merge-ready PRs'
+   leftover Low nits there, BABYSIT.md §7). A nit recurring across several PRs is a systemic signal →
+   promote it to a `ready` cleanup issue (or fix the convention). Otherwise it's batch-cleanup-when-idle.
+
 9. **Schedules.** `schtasks /Query /TN "dnd-agent-*" /V /FO LIST` — tasks present, `Status: Ready`,
    sane `Next Run Time`, and `Last Result` 0. A non-zero last result → read that run's wrapper output.
 

@@ -152,11 +152,14 @@ The loop is **bounded by rounds across runs**, not pushes within a run.
 - If rounds **≥ cap** and the PR is still not clean → **escalate** (§6): "addressed N rounds; not
   converged." Stop.
 - **Circular / no-progress:** if the newest review **re-raises a finding a prior `🛠️` reply claimed to
-  resolve**, or successive rounds keep surfacing new issues with no net reduction → you are likely going
-  in circles → **escalate**. Do **not** re-apply a fix the thread shows was already made (see §5).
+  resolve**, or successive High/Medium rounds keep surfacing issues with no net reduction → you are
+  likely going in circles → **escalate**. Do **not** re-apply a fix the thread shows was already made (§5).
+- **Only High/Medium drive the loop.** Low-severity nits do **not** count toward convergence or the cap.
+  Once no unaddressed **High/Medium** findings remain, the PR is **done** (§7) even if Low nits persist —
+  this stops the loop churning on the endless Low nits an LLM reviewer tends to surface.
 
-This is the "solve it / hit the cap / detect circling" bound: the babysitter keeps iterating across
-runs until the review is clean, but never indefinitely.
+This is the "solve High/Medium, then stop; hit the cap or detect circling → escalate" bound: the
+babysitter iterates across runs until no High/Medium remain, but never indefinitely.
 
 ---
 
@@ -208,11 +211,23 @@ isn't `claude/agent/issue-*`.
 
 ## 7. Done state — merge-ready
 
-A PR is merge-ready when: `frontend` + `backend` checks are `SUCCESS`; `mergeStateStatus` is `CLEAN`
-(not behind/dirty); and there are no unaddressed `🔎 [Reviewing Agent]` findings (the latest review is
-clean or every point has a `🛠️`/`👤` reply). When that holds, post a brief `🛠️` "merge-ready" note and
-send a `PushNotification`: `"PR #N '<title>' is green + review-clean, ready to merge. <url>"`.
+A PR is **merge-ready** when: `frontend` + `backend` checks are `SUCCESS`; `mergeStateStatus` is `CLEAN`
+(not behind/dirty); and there are **no unaddressed High/Medium** `🔎 [Reviewing Agent]` findings. **Low
+nits do not block merge-ready** — an LLM reviewer surfaces them endlessly, so don't chase them in the
+loop (§4). When merge-ready holds, post a brief `🛠️` "merge-ready" note (listing any remaining Low
+nits) and `PushNotification`: `"PR #N '<title>' is green, no High/Medium open, ready to merge. <url>"`.
 **The babysitter never merges — the human does.**
+
+### Low-nit ledger
+When you mark a PR merge-ready with Low nits still open, **log them** so recurring ones become visible
+across PRs (and can be batch-cleaned when there's time). Append to a single open issue titled
+**`🧹 Review nit ledger`** (find-or-create, like the triage report) — one short entry per PR: PR #, date,
+and each remaining Low nit (file:line + one line). Do **not** fix them now. If the same nit recurs across
+several PRs in the ledger, that's a signal to promote it to a real `ready` issue (orchestrator/triage).
+```powershell
+# find-or-create the ledger, then append (edit body via --body-file)
+$ledger = & $gh issue list --repo $slug --state open --search "Review nit ledger in:title" --json number | ConvertFrom-Json
+```
 
 ---
 
