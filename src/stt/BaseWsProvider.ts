@@ -21,6 +21,7 @@ import type {
   TranscriptSegment,
 } from './types'
 import { startMic, type MicCapture, MIC_SAMPLE_RATE } from './mic'
+import { debugLog } from '../lib/logger'
 
 /** What a concrete provider must supply to the shared lifecycle. */
 export interface ProviderSpec {
@@ -100,6 +101,7 @@ export abstract class BaseWsProvider implements SttProvider {
     this.keyterms = this.spec.clampKeyterms(terms)
     // Most providers only accept keyterms at stream open. We apply the new set
     // on the next (re)connect rather than tearing down a live stream.
+    debugLog('stt:keyterms', { provider: this.name, count: this.keyterms.length, terms: this.keyterms })
   }
 
   async start(callbacks: SttCallbacks): Promise<void> {
@@ -225,7 +227,16 @@ export abstract class BaseWsProvider implements SttProvider {
       } catch {
         return // ignore unparseable control frames
       }
-      for (const seg of segments) this.callbacks?.onSegment(seg)
+      for (const seg of segments) {
+        debugLog('stt:segment', {
+          provider: this.name,
+          text: seg.text,
+          isFinal: seg.isFinal,
+          startTime: seg.startTime,
+          ts: seg.ts,
+        })
+        this.callbacks?.onSegment(seg)
+      }
     }
 
     ws.onerror = () => {
