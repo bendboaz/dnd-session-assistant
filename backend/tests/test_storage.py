@@ -1,4 +1,4 @@
-﻿"""Tests for session and transcript storage.
+"""Tests for session and transcript storage.
 
 Covers LocalStorage directly and the init_storage() fallback behaviour when
 Firestore is unconfigured.
@@ -149,17 +149,22 @@ class TestFirestoreFallback:
         # When no Firestore env vars are set, init_storage() should return
         # LocalStorage and emit a warning rather than crashing.
         import storage as storage_mod
-        importlib.reload(storage_mod)
+        try:
+            importlib.reload(storage_mod)
 
-        # Drop the logger= filter so caplog captures records even if the logger
-        # name ever changes (storage.py uses "dnd.storage" explicitly).
-        with caplog.at_level(logging.WARNING):
-            store = storage_mod.init_storage()
+            # Drop the logger= filter so caplog captures records even if the logger
+            # name ever changes (storage.py uses "dnd.storage" explicitly).
+            with caplog.at_level(logging.WARNING):
+                store = storage_mod.init_storage()
 
-        assert isinstance(store, storage_mod.LocalStorage)
-        # A warning must have been logged so ops know they are not in Firestore mode.
-        assert any("local" in r.message.lower() or "jsonl" in r.message.lower()
-                   for r in caplog.records)
+            assert isinstance(store, storage_mod.LocalStorage)
+            # A warning must have been logged so ops know they are not in Firestore mode.
+            assert any("local" in r.message.lower() or "jsonl" in r.message.lower()
+                       for r in caplog.records)
+        finally:
+            # Remove the reloaded module so subsequent tests get a fresh import
+            # under their own environment rather than our stripped one.
+            sys.modules.pop("storage", None)
 
     def test_bad_firestore_creds_falls_back_to_local(
         self, tmp_storage: Path, caplog, monkeypatch
@@ -168,11 +173,16 @@ class TestFirestoreFallback:
         # in CI), init_storage() must fall back to LocalStorage with a warning.
         monkeypatch.setenv("GCP_PROJECT", "nonexistent-project-for-test")
         import storage as storage_mod
-        importlib.reload(storage_mod)
+        try:
+            importlib.reload(storage_mod)
 
-        with caplog.at_level(logging.WARNING):
-            store = storage_mod.init_storage()
+            with caplog.at_level(logging.WARNING):
+                store = storage_mod.init_storage()
 
-        # In CI there are no GCP credentials, so firestore.Client() raises and we
-        # always land here.  Assert the specific fallback type so the test is meaningful.
-        assert isinstance(store, storage_mod.LocalStorage)
+            # In CI there are no GCP credentials, so firestore.Client() raises and we
+            # always land here.  Assert the specific fallback type so the test is meaningful.
+            assert isinstance(store, storage_mod.LocalStorage)
+        finally:
+            # Remove the reloaded module so subsequent tests get a fresh import
+            # under their own environment rather than this test's GCP_PROJECT env.
+            sys.modules.pop("storage", None)

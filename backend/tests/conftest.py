@@ -1,4 +1,4 @@
-﻿"""Shared pytest fixtures for the backend test suite.
+"""Shared pytest fixtures for the backend test suite.
 
 All fixtures that mutate environment variables restore them after the test so
 tests remain independent regardless of execution order.
@@ -46,11 +46,14 @@ def no_firestore_env() -> Generator[None, None, None]:
 @pytest.fixture()
 def client(tmp_storage: Path, no_firestore_env: None) -> TestClient:
     """FastAPI TestClient backed by local JSONL storage (no Firestore, no real keys)."""
-    # Pop main from the module cache so re-import re-runs init_storage() with the
-    # patched env, giving each test a fresh storage instance.
+    # Pop main and its local dependencies from the module cache so re-import
+    # re-runs init_storage() with the patched env, giving each test a fresh
+    # storage instance.  Popping dependents avoids stale cached state when the
+    # module graph grows.
     import importlib
 
-    sys.modules.pop("main", None)
+    for _mod in ("main", "storage", "stt_tokens"):
+        sys.modules.pop(_mod, None)
     main_mod = importlib.import_module("main")
     return TestClient(main_mod.app)
 
