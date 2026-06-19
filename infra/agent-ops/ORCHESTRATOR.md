@@ -17,7 +17,7 @@ deny-hook; see OPERATIONS.md §3 rule 6).
 ## The loops at a glance
 | Loop | Wrapper (`.claude/`) | Cadence | Writes |
 |---|---|---|---|
-| Triage | `run-triage.ps1` | nightly | one `🗂️ Backlog triage` report issue only (propose-only) |
+| Triage | `run-triage.ps1` | nightly | the `🗂️ Backlog triage` report; **grooms `help wanted` issues** (expand body + analysis comment, split into children). Never gating labels, never closes (TRIAGE.md §5b) |
 | Dispatch | `run-dispatch.ps1` | every 2h | claims `ready` issues → parallel PRs (independent subset, cap 3) |
 | Babysitter | `run-babysit.ps1` | hourly | drives `claude/agent/issue-*` PRs to clean review (one round/run) |
 
@@ -63,8 +63,12 @@ loop's self-report — **verify against GitHub + git state**. (`$gh = "C:\Progra
    a loop hit usage limits and is backing off (expected to self-clear). Persistent backoff → investigate
    limits.
 
-8. **Triage freshness.** The `🗂️ Backlog triage` issue (#18) should be recently updated; its `ready`
-   candidates reflect the current backlog.
+8. **Triage freshness + grooming integrity.** The `🗂️ Backlog triage` issue (#18) should be recently
+   updated; its `ready` candidates reflect the current backlog. Spot-check that triage stayed in
+   bounds (TRIAGE.md §5b): it must **not** have applied/removed a gating label or closed any issue, and
+   its `help wanted` grooming must be **additive** (analysis appended below the human's text, parents
+   left open). Verify a `help wanted` issue it claims to have groomed actually carries a fresh
+   `🛠️` analysis, and that any split created real, well-specced children linked from the parent.
 
 8b. **Review-nit ledger.** Scan the `🧹 Review nit ledger` issue (the babysitter logs merge-ready PRs'
    leftover Low nits there, BABYSIT.md §7). A nit recurring across several PRs is a systemic signal →

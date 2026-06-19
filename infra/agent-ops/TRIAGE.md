@@ -1,10 +1,24 @@
 # Backlog Triage — Procedure
 
-**Propose-only guarantee (do not skip this):**
-Triage **never** applies or removes `ready`, `priority:*`, `blocked`, `in-progress`, or
-`needs-attention` on real backlog issues. The **only** thing it writes to GitHub is its own
-triage-report issue (create or in-place update). It opens no code PRs and touches no branches.
-The human is the sole gate on labeling.
+Triage does two things: **(A) report** — assess the open backlog and refresh a single triage-report
+issue; and **(B) groom** — flesh out the issues the human has explicitly invited it to, via the
+`help wanted` label. Both are bounded by the guarantee below.
+
+**Label & destructiveness guarantee (do not skip this):**
+Triage **never** applies or removes the gating labels — `ready`, `priority:*`, `blocked`,
+`in-progress`, `needs-attention` — on any issue. It **never** closes, reopens, or restructures the
+human's issues, and it opens no code PRs and touches no branches. The human is the sole gate on
+labeling and on closing issues.
+
+What triage **may** write to GitHub:
+- its own triage-report issue (create or in-place update);
+- on **`help wanted`** issues only: an expanded **issue body** and a role-headed **analysis comment**;
+- **new child issues** when a `help wanted` issue's discussion asks for a split (the parent is
+  *linked and left open* for the human to close — never closed by triage).
+
+**Comments are authoritative.** Triage reads each issue's full discussion thread and treats human
+comments as direction that overrides the issue body (e.g. a "let's wait for X first" comment means
+the issue is *not* a `ready` candidate, no matter how complete the body is).
 
 This procedure builds on [`OPERATIONS.md`](OPERATIONS.md). Read that file first — it is the frozen
 shared contract for identity, label taxonomy, coordination, escalation, and Windows/PowerShell
@@ -47,12 +61,14 @@ Pull all open issues as JSON, excluding the triage-report issue itself (identifi
 $gh = "C:\Program Files\GitHub CLI\gh.exe"
 $repo = "bendboaz/dnd-session-assistant"
 
-# Fetch all open issues (up to 200; increase --limit if the backlog grows)
+# Fetch all open issues (up to 200; increase --limit if the backlog grows).
+# `comments` is included so the assessment is comment-aware (§3e) — human comments
+# override the body (e.g. a "wait for X" comment disqualifies a ready candidate).
 $issuesRaw = & $gh issue list `
     --repo $repo `
     --state open `
     --limit 200 `
-    --json number,title,labels,body,createdAt,updatedAt
+    --json number,title,labels,body,comments,createdAt,updatedAt
 
 $issues = $issuesRaw | ConvertFrom-Json
 ```
@@ -147,6 +163,34 @@ unmet. (Triage proposes the `blocked` flag in the report; the human sets the lab
 - **Stale:** not updated in more than **60 days** OR the work it describes was already merged
   (check whether a merged PR body references the issue number). Flag for human review.
 
+### 3e. Read the discussion (comments override the body)
+
+Read every issue's **comment thread**, not just the body. Human comments are authoritative and can
+change an issue's classification:
+
+- A **"wait for X first" / "let's hold on this"** comment ⇒ the issue is **not** a `ready` candidate
+  even if the body is complete. Classify it as **waiting** in the report, with the reason and what it's
+  waiting on. (Example: a "wait for real-session transcripts before building" comment on a matching
+  issue ⇒ waiting-on-data, not ready.)
+- A comment that **adds scope, splits, or re-prioritises** ⇒ fold it into the assessment (and, if the
+  issue is `help wanted`, into the grooming in §5b).
+- A comment that **resolves a blocker** ⇒ the dependency may now be clear.
+
+When the body and a later human comment disagree, **the comment wins.** Note the divergence in the
+report so the human can reconcile the body if they want (triage edits non-`help-wanted` bodies — only
+the report records the discrepancy).
+
+### 3f. `meta` issues are context, not backlog
+
+Issues labelled **`meta`** (tracking/status/ledger/resume issues, e.g. the triage report itself, a
+review-nit ledger, a status issue) are **not** buildable work. **Exclude them from ready/priority/
+blocked ranking entirely.** Instead:
+
+- Summarise them in the report's **"Current work picture"** section (what each is tracking).
+- **Recommend closing** any `meta` issue whose tracked work is fully done — in particular when every
+  PR it references has **merged** (check via `gh pr view <n> --json state`). Triage *recommends* the
+  close in the report; the **human closes it** (triage never closes issues).
+
 ---
 
 ## 4. Pick `ready` candidates
@@ -157,6 +201,9 @@ From the assessed backlog, select the top **3–5** issues that are:
 2. **Unblocked** — no unmet hard dependencies
 3. **Not a duplicate** and not stale
 4. Well-sized — dispatchable in a single focused PR (not a multi-week epic)
+5. **Not waiting** — no human comment asking to hold/defer it (§3e)
+6. **Not `help wanted` and not `meta`** — a `help wanted` issue is still being shaped (groom it, §5b),
+   a `meta` issue is not work (§3f)
 
 Rank by suggested priority, then by issue number (older issues first within the same priority).
 
@@ -173,6 +220,67 @@ that the dispatcher should pick up once the human labels them `ready`.
 
 Note: the dispatcher caps concurrent open PRs at **3** (OPERATIONS.md §3). A batch may be larger
 (so there is a queue), but flag that the dispatcher won't exceed the cap.
+
+---
+
+## 5b. Groom `help wanted` issues (the mutating step)
+
+This is the only step that writes to issues other than the report. Run it for **every open issue
+labelled `help wanted`** — the human applies that label precisely to invite this. Decide **expand** vs
+**split** from the issue's body + discussion (§3e). All of §5b obeys the guarantee at the top of this
+file: no gating labels, no closing/restructuring, no PRs.
+
+### When to (re-)groom — idempotency
+
+To avoid re-grooming the same issue every nightly run, find triage's most recent analysis on the issue
+(the `🛠️ [Implementing Agent]` analysis comment, or the `<!-- agent-analysis -->` body section). Groom
+it **only if**:
+
+- there is no prior analysis yet, **or**
+- the latest **human** comment / human body-edit is **newer** than that analysis (the human replied and
+  wants another pass).
+
+Otherwise skip it (already groomed, awaiting the human). **Never remove the `help wanted` label** — the
+human clears it when satisfied, or applies `ready` to hand the shaped issue to the dispatcher.
+
+### Ground the analysis in the code
+
+Before writing, **read the files the issue names** (and grep for the real call sites / types) so the
+analysis is concrete. Respect contract-file rules (OPERATIONS.md §7): you may *reference* a frozen file,
+but any design that changes a frozen signature must say "needs a `docs/DESIGN.md` change first."
+
+### Mode A — Expand (default)
+
+Append a fenced agent-analysis section to the issue **body, below the human's original text** (additive
+— never delete or rewrite their words), and post a short `🛠️ [Implementing Agent]` comment pointing at
+it. Begin the section with a stable marker so a re-groom can find and replace it:
+
+```markdown
+<!-- agent-analysis -->
+## 🛠️ Agent analysis (triage, YYYY-MM-DD)
+```
+
+The section contains: **Opinion / recommendation** (is it worth doing, the sharpest version, any
+pushback) · **Relevant files** (concrete paths + what changes) · **Design considerations** (approaches,
+trade-offs, edge cases, testing seams, contract-file impact) · **Open questions for the human** (the
+decisions triage must not make) · **Proposed Scope / Files / Acceptance** (a draft of the three sections
+`DISPATCH.md` needs, so the human can bless `ready` with one edit once the questions are resolved).
+
+### Mode B — Split (when the discussion asks for it)
+
+If the body or a human comment asks to break the issue up, **create one child issue per piece**, each a
+well-rounded, dispatchable issue with its own **Scope / Relevant files / Acceptance criteria**. Then
+**edit the parent body** (additive) into a short tracking/epic block listing the children
+(`- [ ] #childN — title`) and post a `🛠️` comment summarising the split. **Do not close the parent** —
+leave that to the human. Carry the parent's context into each child and cross-link parent ↔ children.
+Create children **without** gating labels; you may copy clearly-applicable descriptive labels
+(`enhancement`, area labels).
+
+### Hard limits
+
+Never apply/remove `ready`/`priority:*`/`blocked`/`in-progress`/`needs-attention`; never close/reopen an
+issue; never open a code PR or push a branch. If grooming would require any of those, write the
+recommendation into the analysis and leave the action to the human.
 
 ---
 
@@ -230,10 +338,13 @@ _Last updated: YYYY-MM-DD_
 
 | Stat | Count |
 |---|---|
-| Open backlog issues (excl. this report) | N |
+| Open backlog issues (excl. `meta`) | N |
 | Complete & unblocked | N |
 | Incomplete | N |
 | Blocked | N |
+| Waiting (deferred by a human comment) | N |
+| `help wanted` (groomed this run) | N |
+| `meta` (tracking — context only) | N |
 | Duplicate | N |
 | Stale (>60 days since update) | N |
 
@@ -263,10 +374,13 @@ Issues recommended for the human to bless with `ready`:
 
 ---
 
-## Blocked / Duplicate / Stale flags
+## Blocked / Waiting / Duplicate / Stale flags
 
 **Blocked**
 - #N — blocked by #M (still open)
+
+**Waiting** (deferred by a human comment — §3e)
+- #N — held per comment: <reason / what it's waiting on>
 
 **Duplicate**
 - #N duplicates #M — recommend closing #N
@@ -275,6 +389,27 @@ Issues recommended for the human to bless with `ready`:
 - #N — last updated DD days ago; may be obsoleted by <merged work or reason>
 
 _(If any section is empty, write "None detected.")_
+
+---
+
+## Current work picture (`meta` issues)
+
+`meta` issues are tracking/coordination, not backlog. Recommend closing any whose work is fully done.
+
+| # | Tracking | Recommend |
+|---|---|---|
+| #N | what it tracks | keep / **close** (all referenced PRs merged) |
+
+---
+
+## Help-wanted grooming (this run)
+
+Issues groomed this run (§5b). Each `help wanted` issue is expanded or split; the human still owns
+`ready`.
+
+| # | Action | Notes |
+|---|---|---|
+| #N | expanded / split → #a, #b, #c / skipped (already groomed) | one line |
 
 ---
 
@@ -289,7 +424,8 @@ Ordered shortlist for the dispatcher once the human blesses them. Dispatcher cap
 
 ---
 
-_Propose-only run. No labels were applied or removed. No PRs were opened._
+_No gating labels were applied or removed; no issues were closed; no PRs were opened. `help wanted`
+issues may have been expanded/split (§5b) — see "Help-wanted grooming" above._
 ```
 
 ---
@@ -320,8 +456,12 @@ point.
 
 ## Operational notes
 
-- **Do not** apply or remove any label on any backlog issue. This constraint comes from
-  OPERATIONS.md §2 and §3, which assign label ownership. Triage owns no labels on backlog issues.
+- **Do not** apply or remove the **gating labels** (`ready` / `priority:*` / `blocked` /
+  `in-progress` / `needs-attention`) on any issue — OPERATIONS.md §2/§3 assign their ownership to the
+  human / dispatcher. (Triage *may* create child issues during a split and copy clearly-applicable
+  **descriptive** labels onto them, per §5b — never gating labels.)
+- **Do not** close, reopen, or restructure any issue. Triage *recommends* closes (e.g. done `meta`
+  issues) in the report; the human acts on them.
 - **Do not** open code PRs, create branches, or push commits.
 - **Re-mint the token** if the run takes longer than ~10 minutes. See OPERATIONS.md §1.
 - **Windows / PowerShell gotchas:** see OPERATIONS.md §8. In particular: use `--body-file` not
