@@ -50,7 +50,7 @@ export class DeepgramProvider extends BaseWsProvider {
 
       // Deepgram's short-lived grant token is a bearer JWT, presented via the
       // `bearer` subprotocol (the `token` subprotocol is for raw API keys).
-      socketProtocols: (token) => buildSocketProtocols(token),
+      socketProtocols: buildSocketProtocols,
 
       // Keyterms are in the URL, so capture them at clamp time for socketUrl.
       clampKeyterms: (terms) => {

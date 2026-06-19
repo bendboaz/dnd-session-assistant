@@ -103,15 +103,14 @@ export function dedupeClamp(terms: string[], cap: number): string[] {
   return out
 }
 
-/** Exported for unit-testing only. */
-export function stripControlMarkers(text: string): string {
+function stripControlMarkers(text: string): string {
   return text.replace(SONIOX_CONTROL_MARKER_RE, '')
 }
 
 /** Join token texts, stripping Soniox control markers before trimming. */
 function toText(tokens: SonioxToken[]): string {
   return tokens
-    .map((t) => t.text.replace(SONIOX_CONTROL_MARKER_RE, ''))
+    .map((t) => stripControlMarkers(t.text))
     .join('')
     .trim()
 }
