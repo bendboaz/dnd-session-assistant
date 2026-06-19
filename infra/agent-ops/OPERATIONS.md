@@ -61,11 +61,16 @@ strictly — it is the primary mechanism that keeps the three loops from fightin
 | `blocked` | Has an unmet dependency; not dispatchable | **Human.** |
 | `in-progress` | A dispatcher run has claimed it and is building | **Dispatcher only.** Set on claim, clear when the PR opens (or on abort). No other loop touches it. |
 | `needs-attention` | A loop hit something it won't auto-handle; human action required | **Any loop**, on escalation. Cleared by the human. |
+| `help wanted` | Human invites an agent to flesh out / expand this idea-level issue (analysis, relevant files, design, or a split) **before** it is buildable | **Human** applies it (the invitation) and clears it when satisfied. **Triage grooms it** (§3) — grooming never makes it `ready`. |
+| `meta` | A tracking / coordination issue (status, ledgers, resume points) — **not** buildable work | **Human / any loop** may apply. Triage treats it as *context*, never ranks it as backlog (§3). |
 
 - **"in-review" is not a label** — it is *inferred* from an open PR that links the issue
   (`Closes #N`). Do not invent a label for it.
-- An issue is **dispatchable** iff: `ready` AND not `blocked` AND not `in-progress` AND has no open
-  linked PR.
+- An issue is **dispatchable** iff: `ready` AND not `blocked` AND not `in-progress` AND not `meta`
+  AND not `help wanted` AND has no open linked PR. `help wanted` (still being shaped) and `meta`
+  (not work) are never dispatchable.
+- **`help wanted` ≠ `ready`.** `help wanted` invites *triage* to flesh the issue out; `ready` invites
+  the *dispatcher* to build it. Only the human moves an issue from the former to the latter.
 
 ---
 
@@ -83,8 +88,15 @@ Three loops touch the same issues, labels, and PR branches. The rules that keep 
    - **Dispatcher** acts on **issues** (claims them) and opens PRs. Never modifies an existing PR's code.
    - **Babysitter** acts on **PRs only** (`claude/agent/issue-*`). Never edits issues or their labels
      (except adding `needs-attention` on escalation, per §5).
-   - **Triage** only **proposes** — it writes nothing but its own report issue (§ TRIAGE.md). Never
-     applies labels, never opens code PRs.
+   - **Triage** **proposes** (its report) **and grooms issues the human invites it to.** It may:
+     refresh its report issue; read every issue's **comment thread** and treat human comments as
+     authoritative direction; and, on **`help wanted`** issues only, **expand the body and post a
+     role-headed analysis comment** (opinions, relevant files, design considerations) and **split** an
+     issue into well-specced children when the discussion asks for it (creating the children + linking
+     them from the parent). It **never** applies/removes the gating labels (`ready` / `priority:*` /
+     `blocked` / `in-progress` / `needs-attention`), **never closes or restructures** the human's
+     issues (additive + body-edit only — it leaves the parent open for the human to close), and never
+     opens code PRs or touches branches.
 4. **Concurrency gate:** the dispatcher caps the number of open `claude/agent/issue-*` PRs
    (default **3**). It will not claim a new issue past the cap. This bounds both cost and collisions.
 5. **Claim before work:** the dispatcher sets `in-progress` *before* creating the branch, and only
