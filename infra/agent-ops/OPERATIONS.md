@@ -89,6 +89,12 @@ Three loops touch the same issues, labels, and PR branches. The rules that keep 
    (default **3**). It will not claim a new issue past the cap. This bounds both cost and collisions.
 5. **Claim before work:** the dispatcher sets `in-progress` *before* creating the branch, and only
    claims issues that are dispatchable (§2). This is the lock; honor it.
+6. **The playbook is orchestrator-only.** `infra/agent-ops/**` (these procedures, the minter,
+   `cleanup.ps1`, the wrappers, `ORCHESTRATOR.md`) may be edited **only by the orchestrator** (the
+   human's interactive session) — never by a dispatched loop or its builder subagents. Enforcement: the
+   wrappers export `AGENT_LOOP=1`, and the deny-hook blocks Edit/Write under `infra/agent-ops/**` when
+   that is set. **If a `ready` issue's fix would change the playbook, ESCALATE it** (§5) — do not let the
+   loop rewrite its own rules. (This prevents the loop's edits from colliding with orchestration edits.)
 
 ---
 

@@ -73,8 +73,11 @@ async def _mint_soniox(ttl: int) -> SttTokenResponse:
     payload = {"usage_type": "transcribe_websocket", "expires_in_seconds": ttl}
     headers = {"Authorization": f"Bearer {key}"}
 
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-        resp = await client.post(SONIOX_TEMP_KEY_URL, json=payload, headers=headers)
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            resp = await client.post(SONIOX_TEMP_KEY_URL, json=payload, headers=headers)
+    except httpx.RequestError as exc:
+        raise TokenError(502, f"Soniox request failed: {exc}") from exc
 
     if resp.status_code >= 400:
         raise TokenError(502, f"Soniox token request failed ({resp.status_code}).")
@@ -98,8 +101,11 @@ async def _mint_deepgram(ttl: int) -> SttTokenResponse:
     payload = {"ttl_seconds": ttl}
     headers = {"Authorization": f"Token {key}"}
 
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-        resp = await client.post(DEEPGRAM_GRANT_URL, json=payload, headers=headers)
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            resp = await client.post(DEEPGRAM_GRANT_URL, json=payload, headers=headers)
+    except httpx.RequestError as exc:
+        raise TokenError(502, f"Deepgram request failed: {exc}") from exc
 
     if resp.status_code >= 400:
         raise TokenError(502, f"Deepgram grant request failed ({resp.status_code}).")

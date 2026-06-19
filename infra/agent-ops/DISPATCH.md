@@ -265,6 +265,9 @@ must be self-contained and include:
 - **Contract files are READ-ONLY** — see OPERATIONS.md §7 *Contract files (frozen)* for the exact,
   authoritative definition (fully-frozen files, the `loader.ts` public-interface nuance, and the
   test-file carve-out). The subagent must follow that definition, not a looser/narrower paraphrase.
+- **`infra/agent-ops/**` is orchestrator-only** (OPERATIONS.md §3 rule 6) — never edit the agent
+  playbook. If the issue's fix would require changing it, STOP and have the dispatcher escalate the
+  issue (§8) instead of building it. (The deny-hook blocks such edits under `AGENT_LOOP=1` anyway.)
 - Follow all conventions in the repo `CLAUDE.md` (Tailwind theme CSS vars, no `any`, relative
   imports, mobile-first)
 - Run verification (Step 6) before reporting done
