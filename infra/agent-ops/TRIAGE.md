@@ -439,8 +439,10 @@ After the report is written (or updated), send a `PushNotification` with:
   `12 open issues: 4 complete/unblocked, 3 ready candidates. Top pick: #42 Add phonetic matching. Report: <URL>`
 
 Do NOT send a notification for routine intermediate steps — only once the report is posted.
-See OPERATIONS.md §5 for escalation policy (use `needs-attention` + notify if triage itself hits an
-unexpected error; do not silently swallow failures).
+If triage itself hits a boundary (an error it can't handle, a grooming action it can't complete),
+escalate via the shared **[`ESCALATION.md`](ESCALATION.md)** runbook (OPERATIONS.md §5 for *when*) —
+stabilize the in-flight issue edit, still write the report, then `needs-attention` + one comment + one
+notification. Do not silently swallow failures.
 
 ---
 

@@ -185,6 +185,9 @@ review to get a clean read:
 
 ## 6. Escalation (narrowed)
 
+Follow the shared **[`ESCALATION.md`](ESCALATION.md)** runbook (stop → stabilize → finish independent
+WIP → gather context → offer alternatives → alert, idempotently). The babysitter-specific points:
+
 Escalate — `needs-attention` label on the PR + a `🛠️ [Implementing Agent]` comment stating exactly
 what's blocked + a `PushNotification` — then **stop on this PR** and move on. Escalate **only** when:
 
