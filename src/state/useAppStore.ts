@@ -257,6 +257,11 @@ export function useAppStore(): AppStore {
     if (sid) {
       void postTranscript(sid, [seg]).then(async (result) => {
         if (result === 'stale') {
+          // TODO: segments that arrive while sessionIdRef.current is null (between
+          // the clear below and the createSession() await) are silently skipped by
+          // the `if (sid)` guard above. This is pre-existing behaviour that the
+          // retry path exposes more visibly on fast STT streams. A creatingSession
+          // flag or a small buffer would close the window.
           clearSessionId()
           sessionIdRef.current = null
           const newId = await createSession()
