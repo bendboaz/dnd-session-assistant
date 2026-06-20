@@ -140,10 +140,16 @@ Escalate (don't guess) when:
 - Verification fails in a way that needs real logic (not a mechanical fix).
 - A rebase has non-trivial conflicts.
 - A per-run safety cap is hit (e.g. babysitter commit-cap).
+- A **security or permission hook denies a command** (the secret-file gate, the deny-hook, the
+  auto-mode classifier, etc.). The block is a signal to involve the human — escalate; do not retry a
+  reworded version of the same command.
 
 Proceed without notifying for routine success (opened a PR, pushed a mechanical fix, refreshed a report).
 **Never** merge, never approve, never force-past a failing required check, never disable branch
-protection, never edit `.github/workflows/*` or secrets to work around a failure.
+protection, never edit `.github/workflows/*` or secrets to work around a failure. **Never circumvent a
+security or permission hook** — do not rewrite, obfuscate, or string-split a command to slip a blocked
+value past a guardrail (e.g. concatenating a filename to dodge the secret-file gate). A hook denial is a
+hard stop: escalate and let the human decide whether to proceed.
 
 ---
 
