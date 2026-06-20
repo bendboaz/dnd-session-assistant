@@ -56,3 +56,29 @@ class AppendTranscriptRequest(BaseModel):
 class AppendTranscriptResponse(BaseModel):
     ok: bool = True
     count: int
+
+
+class NearMiss(BaseModel):
+    """A Latin token that was examined by the matching engine but produced no detection.
+
+    Near-misses indicate potentially unrecognised aliases or STT mangling that could
+    be addressed by adding aliases to the compendium.  Collecting them is opt-in
+    (requires ENABLE_DATA_COLLECTION=true in the backend env) because the underlying
+    transcript text is real table audio and may contain personal information.
+    """
+
+    token: str = Field(..., description="Normalized Latin token that matched nothing.")
+    context: str = Field(
+        ...,
+        description="Short surrounding transcript excerpt for human review.",
+    )
+    ts: int = Field(..., description="Epoch milliseconds when the segment was scanned.")
+
+
+class AppendNearMissesRequest(BaseModel):
+    near_misses: list[NearMiss]
+
+
+class AppendNearMissesResponse(BaseModel):
+    ok: bool = True
+    count: int

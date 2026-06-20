@@ -55,3 +55,13 @@ def gcp_project() -> str | None:
 
 def local_storage_dir() -> str:
     return os.getenv("LOCAL_STORAGE_DIR", "./data")
+
+
+def data_collection_enabled() -> bool:
+    """Whether to persist near-miss tokens alongside session transcripts.
+
+    Off by default because near-miss data contains real table-audio transcript
+    fragments (personal/creative content).  Set ENABLE_DATA_COLLECTION=true in
+    the backend .env to opt in.  See docs/DESIGN.md §Privacy for the full policy.
+    """
+    return _bool("ENABLE_DATA_COLLECTION", default=False)

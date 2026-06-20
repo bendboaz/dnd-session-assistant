@@ -30,6 +30,7 @@ import type {
   Scanner,
   ScannerOptions,
 } from './types'
+import { debugLog } from '../lib/logger'
 
 const DEFAULT_COOLDOWN_MS = 60_000
 const DEFAULT_MIN_CONFIDENCE = 0.6
@@ -197,20 +198,44 @@ export function createScanner(
     while (i < tokens.length) {
       let matched: Match | null = null
       // Greedy: widest window first, so "fire ball" beats "ball".
-      for (let width = Math.min(maxWindow, tokens.length - i); width >= 1; width--) {
+      const maxWidth = Math.min(maxWindow, tokens.length - i)
+      for (let width = maxWidth; width >= 1; width--) {
         matched = matchWindow(tokens, i, width)
+        debugLog('scan:candidate', {
+          candidate: tokens.slice(i, i + width).join(' '),
+          width,
+          matched: matched !== null,
+          method: matched?.method ?? null,
+          confidence: matched?.confidence ?? null,
+        })
         if (matched) break
       }
 
       if (!matched) {
+        // A Latin token that was examined but produced no detection — a near-miss.
+        debugLog('scan:miss', { token: tokens[i], position: i })
         i += 1
         continue
       }
 
       for (const entry of matched.entries) {
         const last = lastEmit.get(entry.id)
-        if (last !== undefined && now - last < cooldownMs) continue
+        if (last !== undefined && now - last < cooldownMs) {
+          debugLog('scan:cooldown', {
+            entry: entry.id,
+            matchedText: matched.matchedText,
+            suppressedUntil: last + cooldownMs,
+          })
+          continue
+        }
         lastEmit.set(entry.id, now)
+        debugLog('scan:detection', {
+          entry: entry.id,
+          name: entry.name,
+          matchedText: matched.matchedText,
+          method: matched.method,
+          confidence: matched.confidence,
+        })
         detections.push({
           entry,
           matchedText: matched.matchedText,

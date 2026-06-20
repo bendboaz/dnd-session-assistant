@@ -1,6 +1,10 @@
-// Posts finalized transcript segments to the backend (WP-D). The backend may be
-// absent during dev — every failure is swallowed and logged, never surfaced to
-// the user, so the listening UX keeps working offline.
+// Posts finalized transcript segments and near-miss tokens to the backend (WP-D).
+// The backend may be absent during dev — every failure is swallowed and logged,
+// never surfaced to the user, so the listening UX keeps working offline.
+//
+// Near-miss posting is gated server-side on ENABLE_DATA_COLLECTION=true.  The
+// client always attempts the call; the server returns 403 if data collection is
+// disabled, which the client silently ignores.
 
 import type { TranscriptSegment } from '../stt/types'
 
@@ -47,5 +51,41 @@ export async function postTranscript(
     if (!res.ok) throw new Error(`status ${res.status}`)
   } catch (err) {
     console.warn('[transcript] postTranscript failed (backend absent?)', err)
+  }
+}
+
+export interface NearMissPayload {
+  token: string
+  context: string
+  ts: number
+}
+
+/**
+ * Post near-miss tokens to the backend for production data collection.
+ *
+ * The server silently rejects this with 403 when ENABLE_DATA_COLLECTION is off,
+ * so the client does not need to gate the call.  All errors are swallowed.
+ *
+ * Privacy: `context` is a fragment of real table-audio transcript.  Near-miss
+ * collection is therefore opt-in on the server side.  See docs/DESIGN.md §Privacy.
+ */
+export async function postNearMisses(
+  sessionId: string,
+  nearMisses: NearMissPayload[],
+): Promise<void> {
+  if (!nearMisses.length) return
+  try {
+    // 403 is expected when data collection is disabled — don't warn.
+    const res = await fetch(
+      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/near-misses`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ near_misses: nearMisses }),
+      },
+    )
+    if (!res.ok && res.status !== 403) throw new Error(`status ${res.status}`)
+  } catch (err) {
+    console.warn('[transcript] postNearMisses failed (backend absent?)', err)
   }
 }

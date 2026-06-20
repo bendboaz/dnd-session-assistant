@@ -20,7 +20,8 @@ import { createScanner } from '../matching'
 import { createProvider } from '../stt'
 import { DEFAULT_KEYTERM_CANDIDATES } from '../stt/defaultKeyterms'
 import { buildKeyterms } from '../stt/keyterms'
-import { createSession, postTranscript } from './transcript'
+import { createSession, postTranscript, postNearMisses } from './transcript'
+import { latinTokens } from '../lib/text'
 
 /** A detection plus a feed-local id so React keys stay stable across re-renders. */
 export interface FeedItem extends Detection {
@@ -35,6 +36,7 @@ const DEFAULT_PROVIDER: SttProviderName =
   import.meta.env.VITE_STT_PROVIDER === 'deepgram' ? 'deepgram' : 'soniox'
 
 export const PINNED_IDS_KEY = 'dnd-assistant:pinned-ids'
+const NEAR_MISS_CONTEXT_MAX_CHARS = 120
 
 /**
  * Read the persisted pinned entry IDs from localStorage.
@@ -184,6 +186,26 @@ export function useAppStore(): AppStore {
           ...detections.map((d) => ({ ...d, feedId: `f${feedCounter++}` })).reverse(),
           ...prev,
         ])
+      }
+
+      // Collect near-misses: Latin tokens present in the segment but not covered
+      // by any detection's matchedText. These are interesting for alias gap analysis.
+      const sid = sessionIdRef.current
+      if (sid) {
+        const allTokens = latinTokens(seg.text)
+        const coveredTokens = new Set<string>()
+        for (const d of detections) {
+          for (const t of latinTokens(d.matchedText)) coveredTokens.add(t)
+        }
+        const missedTokens = allTokens.filter((t) => !coveredTokens.has(t))
+        if (missedTokens.length) {
+          const nearMisses = missedTokens.map((token) => ({
+            token,
+            context: seg.text.slice(0, NEAR_MISS_CONTEXT_MAX_CHARS),
+            ts: seg.ts,
+          }))
+          void postNearMisses(sid, nearMisses)
+        }
       }
     }
 
