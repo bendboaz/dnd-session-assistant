@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { postNearMisses } from './transcript'
+import { postNearMisses, postTranscript } from './transcript'
 import type { NearMissPayload } from './transcript'
+import type { TranscriptSegment } from '../stt/types'
 
 const SESSION = 'abc123'
 const NEAR_MISS: NearMissPayload = { token: 'firebolt', context: 'i cast firebolt', ts: 1000 }
+const SEG: TranscriptSegment = { text: 'fireball', ts: 1000, isFinal: true }
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('postNearMisses', () => {
@@ -29,7 +32,6 @@ describe('postNearMisses', () => {
 
   it('silently ignores 403 (data collection disabled server-side)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 403 }))
-    // Must not throw or warn about the 403
     const warnSpy = vi.spyOn(console, 'warn')
     await postNearMisses(SESSION, [NEAR_MISS])
     expect(warnSpy).not.toHaveBeenCalled()
@@ -49,5 +51,43 @@ describe('postNearMisses', () => {
     await postNearMisses(SESSION, [NEAR_MISS])
     expect(warnSpy).toHaveBeenCalledOnce()
     expect(warnSpy.mock.calls[0][0]).toContain('postNearMisses')
+  })
+})
+
+function makeFetch(status: number, ok: boolean): typeof globalThis.fetch {
+  return vi.fn().mockResolvedValue({ ok, status, json: async () => ({}) } as Response)
+}
+
+describe('postTranscript', () => {
+  it('returns ok early without fetching when segments is empty', async () => {
+    const spy = vi.fn()
+    vi.stubGlobal('fetch', spy)
+    const result = await postTranscript('session-1', [])
+    expect(result).toBe('ok')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('returns stale on 404', async () => {
+    vi.stubGlobal('fetch', makeFetch(404, false))
+    const result = await postTranscript('session-1', [SEG])
+    expect(result).toBe('stale')
+  })
+
+  it('returns ok on 200', async () => {
+    vi.stubGlobal('fetch', makeFetch(200, true))
+    const result = await postTranscript('session-1', [SEG])
+    expect(result).toBe('ok')
+  })
+
+  it('returns ok (swallowed) on non-404 error status', async () => {
+    vi.stubGlobal('fetch', makeFetch(500, false))
+    const result = await postTranscript('session-1', [SEG])
+    expect(result).toBe('ok')
+  })
+
+  it('returns ok (swallowed) on network error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network failure')))
+    const result = await postTranscript('session-1', [SEG])
+    expect(result).toBe('ok')
   })
 })

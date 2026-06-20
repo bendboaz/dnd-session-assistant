@@ -263,7 +263,10 @@ export function useAppStore(): AppStore {
           if (newId) {
             sessionIdRef.current = newId
             writeSessionId(newId)
-            void postTranscript(newId, [seg])
+            const retryResult = await postTranscript(newId, [seg])
+            if (retryResult === 'stale') {
+              console.warn('[useAppStore] stale-session retry also returned stale; segment may be lost')
+            }
           }
         }
       })
@@ -315,6 +318,9 @@ export function useAppStore(): AppStore {
   // Deliberately end the current session so the next startListening creates a
   // fresh one (different D&D evening).
   const endSession = useCallback(() => {
+    // Any postTranscript calls already in flight will complete normally: they
+    // hold the old session ID and the session still exists server-side until
+    // the backend expires it, so the segments reach their destination.
     clearSessionId()
     sessionIdRef.current = null
     // If the mic is active, stop it too — the user is done with this session.

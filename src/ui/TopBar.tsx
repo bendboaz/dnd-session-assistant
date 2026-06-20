@@ -87,8 +87,7 @@ export function TopBar({
           type="button"
           onClick={onEndSession}
           title="End this session and start fresh next time"
-          className="rounded-lg border px-3 py-1.5 text-xs font-medium text-[var(--color-accent)] active:bg-[var(--color-surface-2)]"
-          style={{ borderColor: 'var(--color-accent)' }}
+          className="rounded-lg border border-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent)] active:bg-[var(--color-surface-2)]"
         >
           End session
         </button>
