@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { readPinnedIds, writePinnedIds, PINNED_IDS_KEY, resolvePinnedEntries } from './useAppStore'
+import {
+  readPinnedIds,
+  writePinnedIds,
+  PINNED_IDS_KEY,
+  resolvePinnedEntries,
+  readSessionId,
+  writeSessionId,
+  clearSessionId,
+  SESSION_ID_KEY,
+} from './useAppStore'
 import type { CompendiumEntry } from '../compendium/types'
 
 // ---------------------------------------------------------------------------
@@ -149,5 +158,119 @@ describe('resolvePinnedEntries', () => {
 
   it('returns [] when entries is empty', () => {
     expect(resolvePinnedEntries([], ['srd:spell:fireball'])).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// readSessionId / writeSessionId / clearSessionId
+// ---------------------------------------------------------------------------
+
+describe('readSessionId', () => {
+  let stub: ReturnType<typeof makeLocalStorageStub>
+
+  beforeEach(() => {
+    stub = makeLocalStorageStub()
+    vi.stubGlobal('localStorage', stub)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('returns null when the key is absent', () => {
+    expect(readSessionId()).toBeNull()
+  })
+
+  it('returns the stored session ID after writeSessionId', () => {
+    writeSessionId('session-abc-123')
+    expect(readSessionId()).toBe('session-abc-123')
+    expect(stub.getItem(SESSION_ID_KEY)).toBe('session-abc-123')
+  })
+
+  it('returns null after clearSessionId removes the key', () => {
+    writeSessionId('session-abc-123')
+    clearSessionId()
+    expect(readSessionId()).toBeNull()
+  })
+
+  it('swallows errors when localStorage throws on getItem', () => {
+    const throwingStub = {
+      ...stub,
+      getItem: (_key: string): string | null => {
+        throw new DOMException('SecurityError')
+      },
+    }
+    vi.stubGlobal('localStorage', throwingStub)
+    expect(readSessionId()).toBeNull()
+  })
+})
+
+describe('writeSessionId', () => {
+  let stub: ReturnType<typeof makeLocalStorageStub>
+
+  beforeEach(() => {
+    stub = makeLocalStorageStub()
+    vi.stubGlobal('localStorage', stub)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('round-trips a session ID through writeSessionId / readSessionId', () => {
+    writeSessionId('session-xyz-456')
+    expect(readSessionId()).toBe('session-xyz-456')
+  })
+
+  it('overwrites a previous session ID', () => {
+    writeSessionId('old-session')
+    writeSessionId('new-session')
+    expect(readSessionId()).toBe('new-session')
+  })
+
+  it('swallows errors when setItem throws (quota / private mode)', () => {
+    const throwingStub = {
+      ...stub,
+      setItem: (_key: string, _value: string): void => {
+        throw new DOMException('QuotaExceededError')
+      },
+    }
+    vi.stubGlobal('localStorage', throwingStub)
+    expect(() => writeSessionId('session-abc')).not.toThrow()
+  })
+})
+
+describe('clearSessionId', () => {
+  let stub: ReturnType<typeof makeLocalStorageStub>
+
+  beforeEach(() => {
+    stub = makeLocalStorageStub()
+    vi.stubGlobal('localStorage', stub)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('removes the key so readSessionId returns null', () => {
+    writeSessionId('session-to-clear')
+    clearSessionId()
+    expect(readSessionId()).toBeNull()
+  })
+
+  it('is a no-op when no session is stored', () => {
+    expect(() => clearSessionId()).not.toThrow()
+    expect(readSessionId()).toBeNull()
+  })
+
+  it('swallows errors when removeItem throws', () => {
+    const throwingStub = {
+      ...stub,
+      removeItem: (_key: string): void => {
+        throw new DOMException('SecurityError')
+      },
+    }
+    vi.stubGlobal('localStorage', throwingStub)
+    expect(() => clearSessionId()).not.toThrow()
   })
 })

@@ -27,12 +27,18 @@ export async function createSession(title?: string): Promise<string | null> {
   }
 }
 
-/** Append one or more finalized segments. No-op (logged) if the backend is absent. */
+/**
+ * Append one or more finalized segments. No-op (logged) if the backend is absent.
+ *
+ * Returns `'stale'` when the backend responds 404 — the caller should discard the
+ * persisted session ID and create a fresh one rather than dropping the segment.
+ * Returns `'ok'` on success or any other non-fatal failure.
+ */
 export async function postTranscript(
   sessionId: string,
   segments: TranscriptSegment[],
-): Promise<void> {
-  if (!segments.length) return
+): Promise<'ok' | 'stale'> {
+  if (!segments.length) return 'ok'
   try {
     const res = await fetch(
       `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/transcript`,
@@ -48,9 +54,12 @@ export async function postTranscript(
         }),
       },
     )
+    if (res.status === 404) return 'stale'
     if (!res.ok) throw new Error(`status ${res.status}`)
+    return 'ok'
   } catch (err) {
     console.warn('[transcript] postTranscript failed (backend absent?)', err)
+    return 'ok'
   }
 }
 
