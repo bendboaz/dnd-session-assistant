@@ -36,6 +36,7 @@ const DEFAULT_PROVIDER: SttProviderName =
   import.meta.env.VITE_STT_PROVIDER === 'deepgram' ? 'deepgram' : 'soniox'
 
 export const PINNED_IDS_KEY = 'dnd-assistant:pinned-ids'
+const NEAR_MISS_CONTEXT_MAX_CHARS = 120
 
 /**
  * Read the persisted pinned entry IDs from localStorage.
@@ -200,7 +201,7 @@ export function useAppStore(): AppStore {
         if (missedTokens.length) {
           const nearMisses = missedTokens.map((token) => ({
             token,
-            context: seg.text.slice(0, 120),
+            context: seg.text.slice(0, NEAR_MISS_CONTEXT_MAX_CHARS),
             ts: seg.ts,
           }))
           void postNearMisses(sid, nearMisses)
