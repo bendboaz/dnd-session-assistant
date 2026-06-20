@@ -201,7 +201,13 @@ export function createScanner(
       const maxWidth = Math.min(maxWindow, tokens.length - i)
       for (let width = maxWidth; width >= 1; width--) {
         matched = matchWindow(tokens, i, width)
-        debugLog('scan:candidate', { candidate: tokens.slice(i, i + width).join(' '), width, matched: matched !== null, method: matched?.method ?? null, confidence: matched?.confidence ?? null })
+        debugLog('scan:candidate', {
+          candidate: tokens.slice(i, i + width).join(' '),
+          width,
+          matched: matched !== null,
+          method: matched?.method ?? null,
+          confidence: matched?.confidence ?? null,
+        })
         if (matched) break
       }
 

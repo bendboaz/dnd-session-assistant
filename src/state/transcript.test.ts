@@ -17,10 +17,10 @@ describe('postNearMisses', () => {
   })
 
   it('POSTs near-misses to the correct endpoint', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
     await postNearMisses(SESSION, [NEAR_MISS])
-    expect(fetch).toHaveBeenCalledOnce()
-    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+    expect(spy).toHaveBeenCalledOnce()
+    const [url, init] = spy.mock.calls[0] as [string, RequestInit]
     expect(url).toContain(`/api/sessions/${SESSION}/near-misses`)
     expect(init.method).toBe('POST')
     const body = JSON.parse(init.body as string) as { near_misses: NearMissPayload[] }
