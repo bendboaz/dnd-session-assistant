@@ -162,6 +162,31 @@ Files in `public/data/srd/` from `5e-bits/5e-database` `src/2014/en/` (OGL-licen
 - Phone installs the PWA ("Add to Home Screen"), reaches Cloud Run directly.
 - **Note:** `gcloud` CLI is not yet installed on the dev machine; install before the deploy step.
 
+## CI path filters & module borders
+
+The CI workflows use `dorny/paths-filter@v3` to skip expensive steps when only unrelated files
+changed, while keeping required check names stable so branch protection is never broken.
+
+### Path ownership
+
+| CI job / workflow | Triggered by changes to |
+|---|---|
+| `frontend` job (ci.yml) | `src/**`, `public/**`, `package*.json`, `vite.config.*`, `tsconfig*.json`, `index.html` |
+| `backend` job (ci.yml) | `backend/**` |
+| `agent-tools` job (ci.yml) | always runs (no filter — fast, no pip cache cost) |
+| AI Review (ai-review.yml) | same as `frontend` union `backend` union `.github/workflows/**` |
+
+**Key guarantees:**
+
+- The `frontend` and `backend` job **names are fixed** — branch protection requires them. The jobs
+  always run; only their expensive steps are gated behind `if: needs.changes.outputs.<job> == 'true'`.
+- Contract files (`src/lib/text.ts`, `src/stt/types.ts`, `src/matching/types.ts`,
+  `src/compendium/types.ts`) live under `src/**` and therefore always trigger the `frontend` job.
+- Pure infra/agent-ops PRs (changes under `infra/agent-ops/**` or `.claude/**`) skip AI Review
+  because `ai-review.yml` uses a `paths:` trigger that excludes those directories. Since
+  `ai-review` is not a required check, skipping it entirely is safe.
+- Docs-only PRs (changes under `docs/**`) also skip AI Review for the same reason.
+
 ## End-to-end verification
 
 1. **Matching (unit):** exact ("fireball"), possessive ("tasha's hideous laughter"), mangled/homophone
