@@ -200,9 +200,8 @@ export function createScanner(
       // Greedy: widest window first, so "fire ball" beats "ball".
       const maxWidth = Math.min(maxWindow, tokens.length - i)
       for (let width = maxWidth; width >= 1; width--) {
-        const candidate = tokens.slice(i, i + width).join(' ')
         matched = matchWindow(tokens, i, width)
-        debugLog('scan:candidate', { candidate, width, matched: matched !== null, method: matched?.method ?? null, confidence: matched?.confidence ?? null })
+        debugLog('scan:candidate', { candidate: tokens.slice(i, i + width).join(' '), width, matched: matched !== null, method: matched?.method ?? null, confidence: matched?.confidence ?? null })
         if (matched) break
       }
 

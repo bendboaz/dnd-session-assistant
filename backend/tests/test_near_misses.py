@@ -67,7 +67,7 @@ def data_collection_client(tmp_storage: Path, no_firestore_env: None):
     old = os.environ.get("ENABLE_DATA_COLLECTION")
     os.environ["ENABLE_DATA_COLLECTION"] = "true"
     try:
-        for _mod in ("main", "storage", "stt_tokens"):
+        for _mod in ("main", "storage", "stt_tokens", "config"):
             sys.modules.pop(_mod, None)
         main_mod = importlib.import_module("main")
         from fastapi.testclient import TestClient

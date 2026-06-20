@@ -85,6 +85,8 @@ class FirestoreStorage(Storage):
     async def append_near_misses(self, session_id: str, near_misses: list[NearMiss]) -> int:
         from google.cloud import firestore  # local import; only needed here
 
+        # The Firestore client is synchronous; no await needed (same pattern as
+        # append_segments / create_session above).
         session_ref = self._db.collection("sessions").document(session_id)
         near_miss_col = session_ref.collection("near_misses")
         batch = self._db.batch()

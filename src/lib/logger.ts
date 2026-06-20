@@ -12,11 +12,9 @@
 // They are emitted only when VITE_DEBUG=true, which must be set deliberately and
 // is OFF in every production build. See docs/DESIGN.md §Privacy for the full policy.
 
-const DEBUG_ENABLED: boolean =
-  import.meta.env.VITE_DEBUG === 'true' ||
-  // Runtime escape hatch for live sessions — set window.__DND_DEBUG = true in
-  // the browser console to enable without a rebuild.
-  (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).__DND_DEBUG === true)
+// Build-time flag only — the runtime escape hatch (__DND_DEBUG) is handled in
+// isDebugEnabled() below so toggling in the console takes effect immediately.
+const DEBUG_ENABLED: boolean = import.meta.env.VITE_DEBUG === 'true'
 
 export function isDebugEnabled(): boolean {
   // Check the runtime escape hatch on every call so toggling in the console
