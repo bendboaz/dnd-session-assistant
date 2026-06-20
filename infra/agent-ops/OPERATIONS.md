@@ -2,7 +2,8 @@
 
 This is the **single source of truth** for how autonomous agents operate on this repo. The three
 procedures — [`DISPATCH.md`](DISPATCH.md) (issues → PRs), [`BABYSIT.md`](BABYSIT.md) (keep PRs green),
-[`TRIAGE.md`](TRIAGE.md) (groom the backlog) — all depend on the rules below. **Treat this file as
+[`TRIAGE.md`](TRIAGE.md) (groom the backlog) — all depend on the rules below, and all share one
+escalation runbook, [`ESCALATION.md`](ESCALATION.md), when they hit a boundary. **Treat this file as
 frozen**: a procedure may not redefine identity, labels, branch naming, comment headers, or escalation
 on its own. Changes go through this file first.
 
@@ -130,9 +131,12 @@ that an `[Implementing Agent]` or `[Human]` reply has already addressed.
 
 ## 5. Escalation & notification policy
 
-Default to **autonomy within bounds; escalate at the boundary.** "Escalate" means: add
-`needs-attention`, post a `🛠️ [Implementing Agent]` comment stating exactly what is blocked and why,
-and send a `PushNotification` with a one-line summary + link. Then **stop** on that item and move on.
+Default to **autonomy within bounds; escalate at the boundary.** Every loop escalates with the **same
+ordered runbook — [`ESCALATION.md`](ESCALATION.md)**: stop at the boundary → stabilize the halted action
+→ finish independent unblocked WIP → gather context → offer alternatives → alert cleanly
+(`needs-attention` + one `🛠️ [Implementing Agent]` comment + one `PushNotification`) → leave a resumable
+trail, then **stop** on that item. **This section defines *when* to escalate; ESCALATION.md defines
+*how*** (and is idempotent — it never re-escalates an item the human already owns).
 
 Escalate (don't guess) when:
 - The issue/PR is ambiguous, under-specified, or needs a product decision.

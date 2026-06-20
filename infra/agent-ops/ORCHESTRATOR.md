@@ -54,7 +54,9 @@ loop's self-report — **verify against GitHub + git state**. (`$gh = "C:\Progra
 
 5. **Stuck / failing PRs.** Open agent PRs with a required check (`frontend`/`backend`) failing across
    multiple rounds, or `needs-attention` set, are the human's queue → surface them. Confirm the
-   babysitter's commit-cap/circular-breaker fired rather than churning.
+   babysitter's commit-cap/circular-breaker fired rather than churning. For each `needs-attention` item,
+   check the escalation followed [`ESCALATION.md`](ESCALATION.md): one role-headed comment with context
+   + alternatives + a resume point, clean state (no orphan worktree / half-applied edit), no duplicates.
 
 6. **Concurrency + independence.** Open `claude/agent/issue-*` PRs ≤ **cap 3**. No two open agent PRs
    should edit the same files (independence filter held) — if they do, expect merge conflicts; flag.

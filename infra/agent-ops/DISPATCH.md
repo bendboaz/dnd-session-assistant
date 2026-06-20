@@ -382,6 +382,10 @@ check, never touch `.github/workflows/*` or secrets.
 
 ## 8. Failure / ambiguity path
 
+This is the dispatcher's instance of the shared **[`ESCALATION.md`](ESCALATION.md)** runbook — follow
+its order (stop → stabilize the halted build → finish the batch's independent issues → gather context →
+offer alternatives → alert → leave a resumable trail). The steps below are its dispatcher-specific form.
+
 Use this path when:
 - Verification fails in a way needing real logic (not a mechanical fix)
 - The issue is ambiguous or under-specified (missing scope, conflicting requirements)
