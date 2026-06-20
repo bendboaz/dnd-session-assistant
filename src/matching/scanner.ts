@@ -221,11 +221,21 @@ export function createScanner(
       for (const entry of matched.entries) {
         const last = lastEmit.get(entry.id)
         if (last !== undefined && now - last < cooldownMs) {
-          debugLog('scan:cooldown', { entry: entry.id, matchedText: matched.matchedText, suppressedUntil: last + cooldownMs })
+          debugLog('scan:cooldown', {
+            entry: entry.id,
+            matchedText: matched.matchedText,
+            suppressedUntil: last + cooldownMs,
+          })
           continue
         }
         lastEmit.set(entry.id, now)
-        debugLog('scan:detection', { entry: entry.id, name: entry.name, matchedText: matched.matchedText, method: matched.method, confidence: matched.confidence })
+        debugLog('scan:detection', {
+          entry: entry.id,
+          name: entry.name,
+          matchedText: matched.matchedText,
+          method: matched.method,
+          confidence: matched.confidence,
+        })
         detections.push({
           entry,
           matchedText: matched.matchedText,
