@@ -23,8 +23,10 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dnd.api")
 
-from config import allowed_origins  # noqa: E402
+from config import allowed_origins, data_collection_enabled  # noqa: E402
 from models import (  # noqa: E402
+    AppendNearMissesRequest,
+    AppendNearMissesResponse,
     AppendTranscriptRequest,
     AppendTranscriptResponse,
     CreateSessionRequest,
@@ -86,6 +88,30 @@ async def append_transcript(
 ) -> AppendTranscriptResponse:
     count = await storage.append_segments(session_id, req.segments)
     return AppendTranscriptResponse(ok=True, count=count)
+
+
+@app.post(
+    "/api/sessions/{session_id}/near-misses",
+    response_model=AppendNearMissesResponse,
+)
+async def append_near_misses(
+    session_id: str,
+    req: AppendNearMissesRequest,
+    _user: FirebaseUser = Depends(require_user),
+) -> AppendNearMissesResponse:
+    """Ingest near-miss tokens (Latin tokens that matched nothing during detection).
+
+    This endpoint is only active when ENABLE_DATA_COLLECTION=true.  Near-miss
+    data contains fragments of real table-audio transcript; collecting it is
+    opt-in.  See docs/DESIGN.md §Privacy for the full policy.
+    """
+    if not data_collection_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="Data collection is disabled on this server. Set ENABLE_DATA_COLLECTION=true to opt in.",
+        )
+    count = await storage.append_near_misses(session_id, req.near_misses)
+    return AppendNearMissesResponse(ok=True, count=count)
 
 
 @app.post("/api/sessions/{session_id}/summarize", status_code=501)

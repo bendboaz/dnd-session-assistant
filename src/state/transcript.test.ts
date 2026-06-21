@@ -1,6 +1,9 @@
-// Tests for the localStorage transcript buffer and backfill logic.
+// Tests for the transcript client: the localStorage buffer + chunked backfill,
+// the auth header / 401 handling, the 'ok' | 'stale' return contract, and
+// near-miss posting.
+//
 // We mock `getIdToken` and `signOut` from the auth module so no Firebase app is
-// needed. localStorage is provided via vi.stubGlobal (same pattern as
+// needed, and stub localStorage via vi.stubGlobal (same pattern as
 // useAppStore.persist.test.ts) so the test environment needs no jsdom config.
 
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
@@ -20,7 +23,9 @@ import {
   dequeueSegments,
   postTranscript,
   flushQueue,
+  postNearMisses,
 } from './transcript'
+import type { NearMissPayload } from './transcript'
 import { getIdToken, signOut } from '../auth/firebase'
 
 // ---- localStorage stub (same helper pattern as useAppStore.persist.test.ts) -
@@ -47,15 +52,22 @@ function makeLocalStorageStub() {
 
 // ---- helpers ----------------------------------------------------------------
 
-function seg(text: string, ts = Date.now()): TranscriptSegment {
+function seg(text: string, ts = 1000): TranscriptSegment {
   return { text, isFinal: true, ts }
+}
+
+const SESSION = 'abc123'
+const NEAR_MISS: NearMissPayload = { token: 'firebolt', context: 'i cast firebolt', ts: 1000 }
+const SEG: TranscriptSegment = { text: 'fireball', ts: 1000, isFinal: true }
+
+function makeFetch(status: number, ok: boolean): typeof globalThis.fetch {
+  return vi.fn().mockResolvedValue({ ok, status, json: async () => ({}) } as Response)
 }
 
 // ---- setup / teardown -------------------------------------------------------
 
 beforeEach(() => {
   vi.stubGlobal('localStorage', makeLocalStorageStub())
-  // Reset call counts on the mocked firebase fns between tests.
   vi.mocked(getIdToken).mockReset().mockResolvedValue(null)
   vi.mocked(signOut).mockReset().mockResolvedValue(undefined)
 })
@@ -127,9 +139,9 @@ describe('dequeueSegments', () => {
   })
 })
 
-// ---- postTranscript ---------------------------------------------------------
+// ---- postTranscript: buffer behavior ----------------------------------------
 
-describe('postTranscript', () => {
+describe('postTranscript (buffer)', () => {
   it('enqueues segments and POSTs them; clears queue on success', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
     vi.stubGlobal('fetch', fetchMock)
@@ -166,8 +178,54 @@ describe('postTranscript', () => {
     await postTranscript('s1', [seg('auth-fail')])
 
     expect(signOut).toHaveBeenCalled()
-    // Segments not lost — remain in queue for after re-auth
+    // Segments not lost — remain in queue for after re-auth.
     expect(readQueue()).toHaveLength(1)
+  })
+
+  it('drops the session queue on 404 (stale)', async () => {
+    enqueueSegments('s1', [seg('orphan')])
+    vi.stubGlobal('fetch', makeFetch(404, false))
+
+    const result = await postTranscript('s1', [seg('stale-seg')])
+
+    expect(result).toBe('stale')
+    expect(readQueue()).toHaveLength(0)
+  })
+})
+
+// ---- postTranscript: 'ok' | 'stale' return contract -------------------------
+
+describe('postTranscript (return contract)', () => {
+  it('returns ok early without fetching when segments is empty', async () => {
+    const spy = vi.fn()
+    vi.stubGlobal('fetch', spy)
+    const result = await postTranscript('session-1', [])
+    expect(result).toBe('ok')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('returns stale on 404', async () => {
+    vi.stubGlobal('fetch', makeFetch(404, false))
+    const result = await postTranscript('session-1', [SEG])
+    expect(result).toBe('stale')
+  })
+
+  it('returns ok on 200', async () => {
+    vi.stubGlobal('fetch', makeFetch(200, true))
+    const result = await postTranscript('session-1', [SEG])
+    expect(result).toBe('ok')
+  })
+
+  it('returns ok (swallowed) on non-404 error status', async () => {
+    vi.stubGlobal('fetch', makeFetch(500, false))
+    const result = await postTranscript('session-1', [SEG])
+    expect(result).toBe('ok')
+  })
+
+  it('returns ok (swallowed) on network error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network failure')))
+    const result = await postTranscript('session-1', [SEG])
+    expect(result).toBe('ok')
   })
 })
 
@@ -208,7 +266,7 @@ describe('flushQueue chunking', () => {
     await flushQueue('s1')
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    // First 100 cleared; remaining 50 still queued
+    // First 100 cleared; remaining 50 still queued.
     expect(readQueue()).toHaveLength(50)
   })
 
@@ -236,5 +294,49 @@ describe('flushQueue chunking', () => {
 
     const headers = (fetchMock.mock.calls[0] as [string, { headers: Record<string, string> }])[1].headers
     expect(headers['Authorization']).toBeUndefined()
+  })
+})
+
+// ---- postNearMisses ---------------------------------------------------------
+
+describe('postNearMisses', () => {
+  it('returns early without fetching when array is empty', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+    await postNearMisses(SESSION, [])
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('POSTs near-misses to the correct endpoint', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
+    await postNearMisses(SESSION, [NEAR_MISS])
+    expect(spy).toHaveBeenCalledOnce()
+    const [url, init] = spy.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain(`/api/sessions/${SESSION}/near-misses`)
+    expect(init.method).toBe('POST')
+    const body = JSON.parse(init.body as string) as { near_misses: NearMissPayload[] }
+    expect(body.near_misses).toEqual([NEAR_MISS])
+  })
+
+  it('silently ignores 403 (data collection disabled server-side)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 403 }))
+    const warnSpy = vi.spyOn(console, 'warn')
+    await postNearMisses(SESSION, [NEAR_MISS])
+    expect(warnSpy).not.toHaveBeenCalled()
+  })
+
+  it('swallows non-403 error responses (e.g. 500)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 500 }))
+    const warnSpy = vi.spyOn(console, 'warn')
+    await postNearMisses(SESSION, [NEAR_MISS])
+    expect(warnSpy).toHaveBeenCalledOnce()
+    expect(warnSpy.mock.calls[0][0]).toContain('postNearMisses')
+  })
+
+  it('swallows fetch network errors', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+    const warnSpy = vi.spyOn(console, 'warn')
+    await postNearMisses(SESSION, [NEAR_MISS])
+    expect(warnSpy).toHaveBeenCalledOnce()
+    expect(warnSpy.mock.calls[0][0]).toContain('postNearMisses')
   })
 })

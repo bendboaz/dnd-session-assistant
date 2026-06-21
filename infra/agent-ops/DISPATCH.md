@@ -146,11 +146,11 @@ $ordered = $dispatchable | Sort-Object -Property @(
 
 ## 3. Concurrency gate
 
-Count open `claude/agent/issue-*` PRs. If the count is at or above the cap (default **3**), stop.
+Count open `claude/agent/issue-*` PRs. If the count is at or above the cap (default **1**), stop.
 Do not claim any new issue.
 
 ```powershell
-$cap = 3
+$cap = 1
 
 $openAgentPRCount = ($openAgentPRs | Where-Object {
     $_.headRefName -like "claude/agent/issue-*"
@@ -265,6 +265,9 @@ must be self-contained and include:
 - **Contract files are READ-ONLY** — see OPERATIONS.md §7 *Contract files (frozen)* for the exact,
   authoritative definition (fully-frozen files, the `loader.ts` public-interface nuance, and the
   test-file carve-out). The subagent must follow that definition, not a looser/narrower paraphrase.
+- **`infra/agent-ops/**` is orchestrator-only** (OPERATIONS.md §3 rule 6) — never edit the agent
+  playbook. If the issue's fix would require changing it, STOP and have the dispatcher escalate the
+  issue (§8) instead of building it. (The deny-hook blocks such edits under `AGENT_LOOP=1` anyway.)
 - Follow all conventions in the repo `CLAUDE.md` (Tailwind theme CSS vars, no `any`, relative
   imports, mobile-first)
 - Run verification (Step 6) before reporting done
@@ -378,6 +381,10 @@ check, never touch `.github/workflows/*` or secrets.
 ---
 
 ## 8. Failure / ambiguity path
+
+This is the dispatcher's instance of the shared **[`ESCALATION.md`](ESCALATION.md)** runbook — follow
+its order (stop → stabilize the halted build → finish the batch's independent issues → gather context →
+offer alternatives → alert → leave a resumable trail). The steps below are its dispatcher-specific form.
 
 Use this path when:
 - Verification fails in a way needing real logic (not a mechanical fix)

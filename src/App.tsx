@@ -26,6 +26,7 @@ function AppInner() {
         compendium={store.compendium}
         sttState={store.sttState}
         onToggleListening={store.toggleListening}
+        onEndSession={store.endSession}
         provider={store.provider}
         onSetProvider={store.setProvider}
         lastTranscript={store.lastTranscript}

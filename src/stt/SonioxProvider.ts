@@ -11,6 +11,10 @@
 // audio format, model, language hints, context terms), then stream binary PCM.
 // The server replies with JSON messages containing `tokens[]`, each with
 // `text`, `is_final`, and `start_ms`.
+//
+// Control markers (e.g. `<end>`, `<start>`, `<noise>`) appear in Soniox token
+// text to signal stream events; they are not transcript content and must be
+// stripped before the segment reaches the UI or the matching engine.
 
 import { BaseWsProvider, type ProviderSpec } from './BaseWsProvider'
 import type { TranscriptSegment } from './types'
@@ -22,6 +26,10 @@ const SONIOX_MODEL = 'stt-rt-preview'
 // targeted booster (pinned + expected names), not full coverage — the local
 // matching engine handles the rest.
 const SONIOX_KEYTERM_CAP = 100
+
+// Soniox embeds control markers in token text to signal stream boundaries.
+// These are not transcript content and must never reach the UI or matcher.
+const SONIOX_CONTROL_MARKER_RE = /<(end|start|noise)>/g
 
 interface SonioxToken {
   text: string
@@ -35,6 +43,26 @@ interface SonioxMessage {
   error_message?: string
 }
 
+/**
+ * Build the Soniox opening config frame. Exported so tests can assert its shape
+ * without standing up a real WebSocket connection.
+ */
+export function buildSonioxOpeningFrame(
+  token: string,
+  keyterms: string[],
+): Record<string, unknown> {
+  return {
+    api_key: token,
+    model: SONIOX_MODEL,
+    audio_format: 'pcm_s16le',
+    sample_rate: 16_000,
+    num_channels: 1,
+    language_hints: ['he', 'en'],
+    enable_endpoint_detection: true,
+    ...(keyterms.length ? { context: { terms: keyterms } } : {}),
+  }
+}
+
 export class SonioxProvider extends BaseWsProvider {
   constructor() {
     const spec: ProviderSpec = {
@@ -43,21 +71,8 @@ export class SonioxProvider extends BaseWsProvider {
       // Soniox authenticates inside the opening config frame, not the URL.
       socketUrl: () => SONIOX_WS_URL,
 
-      openingMessages: (token, keyterms) => {
-        const config = {
-          api_key: token,
-          model: SONIOX_MODEL,
-          audio_format: 'pcm_s16le',
-          sample_rate: 16_000,
-          num_channels: 1,
-          // Hebrew first, English second so dropped-in English terms recognise.
-          language_hints: ['he', 'en'],
-          enable_endpoint_detection: true,
-          // Context biases recognition toward pinned/expected terms.
-          ...(keyterms.length ? { context: { terms: keyterms } } : {}),
-        }
-        return [JSON.stringify(config)]
-      },
+      openingMessages: (token, keyterms) =>
+        [JSON.stringify(buildSonioxOpeningFrame(token, keyterms))],
 
       clampKeyterms: (terms) => dedupeClamp(terms, SONIOX_KEYTERM_CAP),
 
@@ -74,7 +89,8 @@ export class SonioxProvider extends BaseWsProvider {
   }
 }
 
-function dedupeClamp(terms: string[], cap: number): string[] {
+/** Exported for unit-testing only — tests import this directly. */
+export function dedupeClamp(terms: string[], cap: number): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   for (const t of terms) {
@@ -87,7 +103,20 @@ function dedupeClamp(terms: string[], cap: number): string[] {
   return out
 }
 
-function parseSonioxMessage(data: string): TranscriptSegment[] {
+function stripControlMarkers(text: string): string {
+  return text.replace(SONIOX_CONTROL_MARKER_RE, '')
+}
+
+/** Join token texts, stripping Soniox control markers before trimming. */
+function toText(tokens: SonioxToken[]): string {
+  return tokens
+    .map((t) => stripControlMarkers(t.text))
+    .join('')
+    .trim()
+}
+
+/** Exported for unit-testing only. */
+export function parseSonioxMessage(data: string): TranscriptSegment[] {
   const msg = JSON.parse(data) as SonioxMessage
   if (msg.error_code) {
     throw new Error(`Soniox error ${msg.error_code}: ${msg.error_message ?? 'unknown'}`)
@@ -105,10 +134,10 @@ function parseSonioxMessage(data: string): TranscriptSegment[] {
 
   const segments: TranscriptSegment[] = []
   if (finalTokens.length) {
-    segments.push({ text: finalTokens.map((t) => t.text).join('').trim(), isFinal: true, startTime, ts })
+    segments.push({ text: toText(finalTokens), isFinal: true, startTime, ts })
   }
   if (interimTokens.length) {
-    segments.push({ text: interimTokens.map((t) => t.text).join('').trim(), isFinal: false, startTime, ts })
+    segments.push({ text: toText(interimTokens), isFinal: false, startTime, ts })
   }
   return segments.filter((s) => s.text.length > 0)
 }

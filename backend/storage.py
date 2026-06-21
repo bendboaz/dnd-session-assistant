@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from config import gcp_project, local_storage_dir
-from models import CreateSessionRequest, Segment
+from models import CreateSessionRequest, NearMiss, Segment
 
 logger = logging.getLogger("dnd.storage")
 
@@ -41,6 +41,11 @@ class Storage:
 
     async def append_segments(
         self, session_id: str, segments: list[Segment]
+    ) -> int:  # pragma: no cover
+        raise NotImplementedError
+
+    async def append_near_misses(
+        self, session_id: str, near_misses: list[NearMiss]
     ) -> int:  # pragma: no cover
         raise NotImplementedError
 
@@ -77,6 +82,21 @@ class FirestoreStorage(Storage):
         session_ref.update({"segmentCount": firestore.Increment(len(segments))})
         return len(segments)
 
+    async def append_near_misses(self, session_id: str, near_misses: list[NearMiss]) -> int:
+        from google.cloud import firestore  # local import; only needed here
+
+        # The Firestore client is synchronous; no await needed (same pattern as
+        # append_segments / create_session above).
+        session_ref = self._db.collection("sessions").document(session_id)
+        near_miss_col = session_ref.collection("near_misses")
+        batch = self._db.batch()
+        for nm in near_misses:
+            nm_ref = near_miss_col.document()
+            batch.set(nm_ref, nm.model_dump())
+        batch.commit()
+        session_ref.update({"nearMissCount": firestore.Increment(len(near_misses))})
+        return len(near_misses)
+
 
 class LocalStorage(Storage):
     backend = "local-jsonl"
@@ -112,6 +132,15 @@ class LocalStorage(Storage):
             for seg in segments:
                 fh.write(json.dumps(seg.model_dump(), ensure_ascii=False) + "\n")
         return len(segments)
+
+    async def append_near_misses(self, session_id: str, near_misses: list[NearMiss]) -> int:
+        sdir = self._session_dir(session_id)
+        sdir.mkdir(parents=True, exist_ok=True)
+        path = sdir / "near_misses.jsonl"
+        with path.open("a", encoding="utf-8") as fh:
+            for nm in near_misses:
+                fh.write(json.dumps(nm.model_dump(), ensure_ascii=False) + "\n")
+        return len(near_misses)
 
 
 def init_storage() -> Storage:

@@ -2,7 +2,8 @@
 
 This is the **single source of truth** for how autonomous agents operate on this repo. The three
 procedures — [`DISPATCH.md`](DISPATCH.md) (issues → PRs), [`BABYSIT.md`](BABYSIT.md) (keep PRs green),
-[`TRIAGE.md`](TRIAGE.md) (groom the backlog) — all depend on the rules below. **Treat this file as
+[`TRIAGE.md`](TRIAGE.md) (groom the backlog) — all depend on the rules below, and all share one
+escalation runbook, [`ESCALATION.md`](ESCALATION.md), when they hit a boundary. **Treat this file as
 frozen**: a procedure may not redefine identity, labels, branch naming, comment headers, or escalation
 on its own. Changes go through this file first.
 
@@ -61,11 +62,16 @@ strictly — it is the primary mechanism that keeps the three loops from fightin
 | `blocked` | Has an unmet dependency; not dispatchable | **Human.** |
 | `in-progress` | A dispatcher run has claimed it and is building | **Dispatcher only.** Set on claim, clear when the PR opens (or on abort). No other loop touches it. |
 | `needs-attention` | A loop hit something it won't auto-handle; human action required | **Any loop**, on escalation. Cleared by the human. |
+| `help wanted` | Human invites an agent to flesh out / expand this idea-level issue (analysis, relevant files, design, or a split) **before** it is buildable | **Human** applies it (the invitation) and clears it when satisfied. **Triage grooms it** (§3) — grooming never makes it `ready`. |
+| `meta` | A tracking / coordination issue (status, ledgers, resume points) — **not** buildable work | **Human / any loop** may apply. Triage treats it as *context*, never ranks it as backlog (§3). |
 
 - **"in-review" is not a label** — it is *inferred* from an open PR that links the issue
   (`Closes #N`). Do not invent a label for it.
-- An issue is **dispatchable** iff: `ready` AND not `blocked` AND not `in-progress` AND has no open
-  linked PR.
+- An issue is **dispatchable** iff: `ready` AND not `blocked` AND not `in-progress` AND not `meta`
+  AND not `help wanted` AND has no open linked PR. `help wanted` (still being shaped) and `meta`
+  (not work) are never dispatchable.
+- **`help wanted` ≠ `ready`.** `help wanted` invites *triage* to flesh the issue out; `ready` invites
+  the *dispatcher* to build it. Only the human moves an issue from the former to the latter.
 
 ---
 
@@ -83,12 +89,27 @@ Three loops touch the same issues, labels, and PR branches. The rules that keep 
    - **Dispatcher** acts on **issues** (claims them) and opens PRs. Never modifies an existing PR's code.
    - **Babysitter** acts on **PRs only** (`claude/agent/issue-*`). Never edits issues or their labels
      (except adding `needs-attention` on escalation, per §5).
-   - **Triage** only **proposes** — it writes nothing but its own report issue (§ TRIAGE.md). Never
-     applies labels, never opens code PRs.
+   - **Triage** **proposes** (its report) **and grooms issues the human invites it to.** It may:
+     refresh its report issue; read every issue's **comment thread** and treat human comments as
+     authoritative direction; and, on **`help wanted`** issues only, **expand the body and post a
+     role-headed analysis comment** (opinions, relevant files, design considerations) and **split** an
+     issue into well-specced children when the discussion asks for it (creating the children + linking
+     them from the parent); and **reply (one role-headed comment) to a comment that directly addresses
+     triage** on **any** issue (answering its question / opinion request — TRIAGE.md §3e). It **never**
+     applies/removes the gating labels (`ready` / `priority:*` /
+     `blocked` / `in-progress` / `needs-attention`), **never closes or restructures** the human's
+     issues (additive + body-edit only — it leaves the parent open for the human to close), and never
+     opens code PRs or touches branches.
 4. **Concurrency gate:** the dispatcher caps the number of open `claude/agent/issue-*` PRs
-   (default **3**). It will not claim a new issue past the cap. This bounds both cost and collisions.
+   (default **1**). It will not claim a new issue past the cap. This bounds both cost and collisions.
 5. **Claim before work:** the dispatcher sets `in-progress` *before* creating the branch, and only
    claims issues that are dispatchable (§2). This is the lock; honor it.
+6. **The playbook is orchestrator-only.** `infra/agent-ops/**` (these procedures, the minter,
+   `cleanup.ps1`, the wrappers, `ORCHESTRATOR.md`) may be edited **only by the orchestrator** (the
+   human's interactive session) — never by a dispatched loop or its builder subagents. Enforcement: the
+   wrappers export `AGENT_LOOP=1`, and the deny-hook blocks Edit/Write under `infra/agent-ops/**` when
+   that is set. **If a `ready` issue's fix would change the playbook, ESCALATE it** (§5) — do not let the
+   loop rewrite its own rules. (This prevents the loop's edits from colliding with orchestration edits.)
 
 ---
 
@@ -112,9 +133,12 @@ that an `[Implementing Agent]` or `[Human]` reply has already addressed.
 
 ## 5. Escalation & notification policy
 
-Default to **autonomy within bounds; escalate at the boundary.** "Escalate" means: add
-`needs-attention`, post a `🛠️ [Implementing Agent]` comment stating exactly what is blocked and why,
-and send a `PushNotification` with a one-line summary + link. Then **stop** on that item and move on.
+Default to **autonomy within bounds; escalate at the boundary.** Every loop escalates with the **same
+ordered runbook — [`ESCALATION.md`](ESCALATION.md)**: stop at the boundary → stabilize the halted action
+→ finish independent unblocked WIP → gather context → offer alternatives → alert cleanly
+(`needs-attention` + one `🛠️ [Implementing Agent]` comment + one `PushNotification`) → leave a resumable
+trail, then **stop** on that item. **This section defines *when* to escalate; ESCALATION.md defines
+*how*** (and is idempotent — it never re-escalates an item the human already owns).
 
 Escalate (don't guess) when:
 - The issue/PR is ambiguous, under-specified, or needs a product decision.
@@ -122,10 +146,16 @@ Escalate (don't guess) when:
 - Verification fails in a way that needs real logic (not a mechanical fix).
 - A rebase has non-trivial conflicts.
 - A per-run safety cap is hit (e.g. babysitter commit-cap).
+- A **security or permission hook denies a command** (the secret-file gate, the deny-hook, the
+  auto-mode classifier, etc.). The block is a signal to involve the human — escalate; do not retry a
+  reworded version of the same command.
 
 Proceed without notifying for routine success (opened a PR, pushed a mechanical fix, refreshed a report).
 **Never** merge, never approve, never force-past a failing required check, never disable branch
-protection, never edit `.github/workflows/*` or secrets to work around a failure.
+protection, never edit `.github/workflows/*` or secrets to work around a failure. **Never circumvent a
+security or permission hook** — do not rewrite, obfuscate, or string-split a command to slip a blocked
+value past a guardrail (e.g. concatenating a filename to dodge the secret-file gate). A hook denial is a
+hard stop: escalate and let the human decide whether to proceed.
 
 ---
 
