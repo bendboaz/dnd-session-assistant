@@ -25,6 +25,12 @@ def _make_client(monkeypatch) -> TestClient:
         if mod in sys.modules:
             importlib.reload(sys.modules[mod])
 
+    # Reset the lazy Firebase singleton (mirrors test_auth.py) so a stale app from
+    # another test can't leak in if DEV_AUTH_BYPASS is ever toggled off here.
+    import auth as auth_mod  # noqa: PLC0415
+
+    auth_mod._firebase_app = None
+
     from main import app  # noqa: PLC0415
 
     return TestClient(app, raise_server_exceptions=False)

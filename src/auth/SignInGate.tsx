@@ -72,8 +72,7 @@ export function SignInGate({ children }: Props) {
           {signingIn ? (
             <>
               <span
-                className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-border)]"
-                style={{ borderTopColor: 'var(--color-accent-2)' }}
+                className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-accent-2)]"
               />
               <span>Signing in…</span>
             </>
