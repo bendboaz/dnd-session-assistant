@@ -218,7 +218,7 @@ From the ready candidates (or the shortlist of candidates you'd bless if the hum
 produce an ordered list — **priority descending, then number ascending** — of up to **5** issues
 that the dispatcher should pick up once the human labels them `ready`.
 
-Note: the dispatcher caps concurrent open PRs at **3** (OPERATIONS.md §3). A batch may be larger
+Note: the dispatcher caps concurrent open PRs at **1** (OPERATIONS.md §3). A batch may be larger
 (so there is a queue), but flag that the dispatcher won't exceed the cap.
 
 ---
@@ -415,7 +415,7 @@ Issues groomed this run (§5b). Each `help wanted` issue is expanded or split; t
 
 ## Proposed next dispatcher batch
 
-Ordered shortlist for the dispatcher once the human blesses them. Dispatcher cap: 3 concurrent PRs.
+Ordered shortlist for the dispatcher once the human blesses them. Dispatcher cap: 1 concurrent PR.
 
 1. #N — Title (priority: high)
 2. #N — Title (priority: high)

@@ -99,7 +99,7 @@ Three loops touch the same issues, labels, and PR branches. The rules that keep 
      issues (additive + body-edit only — it leaves the parent open for the human to close), and never
      opens code PRs or touches branches.
 4. **Concurrency gate:** the dispatcher caps the number of open `claude/agent/issue-*` PRs
-   (default **3**). It will not claim a new issue past the cap. This bounds both cost and collisions.
+   (default **1**). It will not claim a new issue past the cap. This bounds both cost and collisions.
 5. **Claim before work:** the dispatcher sets `in-progress` *before* creating the branch, and only
    claims issues that are dispatchable (§2). This is the lock; honor it.
 6. **The playbook is orchestrator-only.** `infra/agent-ops/**` (these procedures, the minter,
