@@ -205,14 +205,25 @@ reply exists with `createdAt` **newer** than that human comment. Skip answered c
 still-unanswered ones. Skeleton:
 
 ```powershell
-# $triggerComment = the human comment that addresses triage (from $issue.comments)
-$answered = $issue.comments | Where-Object {
-    $_.body -like '*[Implementing Agent]*' -and
-    [datetime]$_.createdAt -gt [datetime]$triggerComment.createdAt
+# 1. Identify triage-directed human comments: a human (not the bot) comment whose body
+#    addresses triage by name / asks it a question. Tune the bot login + cues to taste;
+#    judgement still applies — these patterns are a starting filter, not the whole test.
+$botLogin = 'bendboaz'  # comments post from the human's account; role header marks agent ones
+$triggers = $issue.comments | Where-Object {
+    $_.body -notlike '*[Implementing Agent]*' -and          # not an agent reply
+    $_.body -notlike '*[Reviewing Agent]*' -and
+    ($_.body -match '(?i)\btriage\b' -or $_.body -match '\?')
 }
-if (-not $answered) {
-    # write the reply body to a temp file, ASCII, then:
-    & $gh issue comment $issue.number --repo $repo --body-file $replyFile
+foreach ($triggerComment in $triggers) {
+    # 2. Idempotency: answered iff a 🛠️ reply is NEWER than this human comment.
+    $answered = $issue.comments | Where-Object {
+        $_.body -like '*[Implementing Agent]*' -and
+        [datetime]$_.createdAt -gt [datetime]$triggerComment.createdAt
+    }
+    if (-not $answered) {
+        # write the reply body to a temp file, ASCII, then:
+        & $gh issue comment $issue.number --repo $repo --body-file $replyFile
+    }
 }
 ```
 
