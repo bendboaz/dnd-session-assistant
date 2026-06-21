@@ -26,6 +26,7 @@ from typing import Any
 
 import firebase_admin
 import firebase_admin.auth
+import firebase_admin.exceptions
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -105,15 +106,15 @@ async def require_user(
     try:
         app = _get_firebase_app()
         decoded = firebase_admin.auth.verify_id_token(token, app=app)
-    except firebase_admin.auth.InvalidIdTokenError as exc:
-        logger.warning("Invalid Firebase ID token: %s", exc)
+    except (ValueError, firebase_admin.exceptions.FirebaseError) as exc:
+        # Token-level rejections (malformed/invalid/expired/revoked): ExpiredIdTokenError
+        # is itself an InvalidIdTokenError, which is a FirebaseError, so one branch
+        # covers them all. verify_id_token raises ValueError for a malformed token.
+        logger.warning("Firebase ID token rejected: %s", exc)
         raise HTTPException(status_code=401, detail="Invalid or expired ID token.") from exc
-    except firebase_admin.auth.ExpiredIdTokenError as exc:
-        logger.warning("Expired Firebase ID token: %s", exc)
-        raise HTTPException(status_code=401, detail="ID token has expired.") from exc
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Firebase token verification failed: %s", exc)
-        raise HTTPException(status_code=401, detail="Token verification failed.") from exc
+    # Anything else (e.g. a startup misconfiguration: wrong project id, missing
+    # credentials) is a real server fault — let it propagate as a 500 rather than
+    # masquerading as a bad token.
 
     # ------------------------------------------------------------------
     # 4. Check the email allowlist.  Fail-closed: if the list is empty

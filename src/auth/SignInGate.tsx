@@ -12,12 +12,14 @@ interface Props {
 }
 
 export function SignInGate({ children }: Props) {
+  // All hooks must run unconditionally (Rules of Hooks) — keep them above any
+  // early return.
   const { user, loading, signIn } = useAuth()
+  const [signingIn, setSigningIn] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // LOCAL DEV: when auth is disabled, render the app with no gate at all.
   if (authDisabled()) return <>{children}</>
-  const [signingIn, setSigningIn] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   if (loading) {
     // Reuse the same spinner style as LoadingScreen to keep the UX consistent.
@@ -28,8 +30,7 @@ export function SignInGate({ children }: Props) {
         </h1>
         <div className="flex items-center gap-3 text-[var(--color-ink-dim)]">
           <span
-            className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-border)]"
-            style={{ borderTopColor: 'var(--color-accent-2)' }}
+            className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-accent-2)]"
           />
           <span>Checking sign-in…</span>
         </div>

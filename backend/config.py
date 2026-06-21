@@ -83,12 +83,8 @@ def dev_auth_bypass() -> bool:
 
 
 # --- Cost guard ---
-def max_transcript_segments() -> int:
-    """Maximum number of segments accepted in a single transcript append request."""
-    try:
-        return int(os.getenv("MAX_TRANSCRIPT_SEGMENTS", "1000"))
-    except ValueError:
-        return 1000
+# The per-request transcript segment cap is enforced statically in models.py
+# (AppendTranscriptRequest.segments, max_length=1000) — a fixed safety ceiling.
 
 
 def data_collection_enabled() -> bool:

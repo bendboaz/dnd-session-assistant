@@ -80,5 +80,5 @@ export function signOut(): Promise<void> {
 export async function getIdToken(): Promise<string | null> {
   // In dev-bypass mode never touch the SDK (no valid config exists to init).
   if (authDisabled()) return null
-  return auth().currentUser ? auth().currentUser!.getIdToken() : null
+  return auth().currentUser?.getIdToken() ?? null
 }

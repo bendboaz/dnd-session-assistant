@@ -79,11 +79,11 @@ with no Firebase project or signed-in account.  **Never set this in production.*
 
 ## Transcript segment cap
 
-Each `POST /api/sessions/{id}/transcript` request is capped at **1 000 segments** (enforced by
-Pydantic at request parse time).  Requests exceeding this limit get `422 Unprocessable Entity`
-before any route handler runs.  The cap is configurable via `MAX_TRANSCRIPT_SEGMENTS` env (default
-1000) but the Pydantic hard-cap of 1000 always applies.  The frontend chunks backfill into
-≤100-segment batches, so the ceiling is never reached under normal operation.
+Each `POST /api/sessions/{id}/transcript` request is capped at **1 000 segments** (a fixed safety
+ceiling enforced by Pydantic at request parse time — see `AppendTranscriptRequest` in `models.py`).
+Requests exceeding this limit get `422 Unprocessable Entity` before any route handler runs.  The
+frontend chunks backfill into ≤100-segment batches, so the ceiling is never reached under normal
+operation.
 
 ## Docker / Cloud Run
 
