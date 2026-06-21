@@ -55,3 +55,37 @@ def gcp_project() -> str | None:
 
 def local_storage_dir() -> str:
     return os.getenv("LOCAL_STORAGE_DIR", "./data")
+
+
+# --- Auth (Firebase) ---
+def allowed_emails() -> list[str]:
+    """Comma-separated allowlist of Google account emails permitted to sign in.
+
+    Entries are stripped, lowercased, and empty strings dropped — same pattern as
+    `allowed_origins()`.  An empty list means *nobody* is allowed (fail-closed).
+    """
+    return [
+        e.strip().lower()
+        for e in os.getenv("ALLOWED_EMAILS", "").split(",")
+        if e.strip()
+    ]
+
+
+def dev_auth_bypass() -> bool:
+    """When set, Firebase auth verification is skipped entirely (LOCAL DEV only).
+
+    Hard-disabled on Cloud Run: the platform always sets ``K_SERVICE``, so even if
+    ``DEV_AUTH_BYPASS`` leaks into a production env var it can never open the gate.
+    """
+    if os.getenv("K_SERVICE"):
+        return False
+    return _bool("DEV_AUTH_BYPASS", default=False)
+
+
+# --- Cost guard ---
+def max_transcript_segments() -> int:
+    """Maximum number of segments accepted in a single transcript append request."""
+    try:
+        return int(os.getenv("MAX_TRANSCRIPT_SEGMENTS", "1000"))
+    except ValueError:
+        return 1000

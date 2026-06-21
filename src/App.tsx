@@ -11,8 +11,9 @@ import { EntryDetail } from './ui/EntryDetail'
 import { LoadingScreen } from './ui/LoadingScreen'
 import { PinnedBar } from './ui/PinnedBar'
 import { TopBar } from './ui/TopBar'
+import { SignInGate } from './auth/SignInGate'
 
-export default function App() {
+function AppInner() {
   const store = useAppStore()
 
   if (store.loading || store.loadError || !store.compendium) {
@@ -50,5 +51,13 @@ export default function App() {
         />
       )}
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <SignInGate>
+      <AppInner />
+    </SignInGate>
   )
 }

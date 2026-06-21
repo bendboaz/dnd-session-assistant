@@ -51,6 +51,40 @@ credentials (typical local dev) the app logs a warning and falls back to **local
 JSONL** under `LOCAL_STORAGE_DIR` (default `./data/<session-id>/transcript.jsonl`),
 so the frontend keeps working. The active backend is logged once at startup.
 
+## Authentication (Firebase ID tokens)
+
+Protected routes (`/api/stt-token`, `POST /api/sessions`, `POST /api/sessions/{id}/transcript`,
+`POST /api/sessions/{id}/summarize`) require a Firebase ID token in the `Authorization` header:
+
+```
+Authorization: Bearer <firebase-id-token>
+```
+
+The backend verifies the token via the Firebase Admin SDK using application-default credentials
+(on Cloud Run the runtime service account provides these automatically; the GCP project is taken
+from `GCP_PROJECT` / `GOOGLE_CLOUD_PROJECT`).
+
+After successful token verification the caller's email is checked against the `ALLOWED_EMAILS`
+allowlist (comma-separated env var, case-insensitive).  If the allowlist is empty **and**
+`DEV_AUTH_BYPASS` is off, the request is rejected (403 fail-closed — nobody gets in).
+
+`/api/health` is intentionally **open** (no auth) so Cloud Run health checks work without
+credentials.
+
+### Local development
+
+Set `DEV_AUTH_BYPASS=1` in `.env` (the default in `.env.example`) to skip all Firebase
+verification and return a fake dev user.  This lets the frontend and backend work together locally
+with no Firebase project or signed-in account.  **Never set this in production.**
+
+## Transcript segment cap
+
+Each `POST /api/sessions/{id}/transcript` request is capped at **1 000 segments** (enforced by
+Pydantic at request parse time).  Requests exceeding this limit get `422 Unprocessable Entity`
+before any route handler runs.  The cap is configurable via `MAX_TRANSCRIPT_SEGMENTS` env (default
+1000) but the Pydantic hard-cap of 1000 always applies.  The frontend chunks backfill into
+≤100-segment batches, so the ceiling is never reached under normal operation.
+
 ## Docker / Cloud Run
 
 ```powershell

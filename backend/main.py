@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
@@ -32,6 +32,7 @@ from models import (  # noqa: E402
     HealthResponse,
     SttTokenResponse,
 )
+from auth import FirebaseUser, require_user  # noqa: E402
 from storage import Storage, init_storage  # noqa: E402
 from stt_tokens import TokenError, mint_token  # noqa: E402
 
@@ -58,6 +59,7 @@ def health() -> HealthResponse:
 @app.get("/api/stt-token", response_model=SttTokenResponse)
 async def stt_token(
     provider: str = Query(..., pattern="^(soniox|deepgram)$"),
+    _user: FirebaseUser = Depends(require_user),
 ) -> SttTokenResponse:
     try:
         return await mint_token(provider)
@@ -66,7 +68,10 @@ async def stt_token(
 
 
 @app.post("/api/sessions", response_model=CreateSessionResponse)
-async def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
+async def create_session(
+    req: CreateSessionRequest,
+    _user: FirebaseUser = Depends(require_user),
+) -> CreateSessionResponse:
     session_id = await storage.create_session(req)
     return CreateSessionResponse(id=session_id)
 
@@ -75,14 +80,19 @@ async def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
     "/api/sessions/{session_id}/transcript", response_model=AppendTranscriptResponse
 )
 async def append_transcript(
-    session_id: str, req: AppendTranscriptRequest
+    session_id: str,
+    req: AppendTranscriptRequest,
+    _user: FirebaseUser = Depends(require_user),
 ) -> AppendTranscriptResponse:
     count = await storage.append_segments(session_id, req.segments)
     return AppendTranscriptResponse(ok=True, count=count)
 
 
 @app.post("/api/sessions/{session_id}/summarize", status_code=501)
-async def summarize(session_id: str) -> None:
+async def summarize(
+    session_id: str,
+    _user: FirebaseUser = Depends(require_user),
+) -> None:
     # Stub for later Ollama / Claude summarization work.
     raise HTTPException(
         status_code=501, detail="Summarization is not implemented yet."
