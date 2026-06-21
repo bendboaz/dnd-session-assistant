@@ -37,6 +37,43 @@ const DEFAULT_PROVIDER: SttProviderName =
 
 export const PINNED_IDS_KEY = 'dnd-assistant:pinned-ids'
 const NEAR_MISS_CONTEXT_MAX_CHARS = 120
+export const SESSION_ID_KEY = 'dnd-assistant:active-session-id'
+
+/**
+ * Read the persisted active session ID from localStorage.
+ * Returns null on any failure (private mode, missing key, etc.).
+ */
+export function readSessionId(): string | null {
+  try {
+    return localStorage.getItem(SESSION_ID_KEY)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Write a session ID to localStorage so it survives page reloads.
+ * Silently swallows errors (private mode, quota exceeded, etc.).
+ */
+export function writeSessionId(id: string): void {
+  try {
+    localStorage.setItem(SESSION_ID_KEY, id)
+  } catch {
+    // best-effort
+  }
+}
+
+/**
+ * Remove the persisted session ID from localStorage.
+ * Called when the user explicitly ends a session.
+ */
+export function clearSessionId(): void {
+  try {
+    localStorage.removeItem(SESSION_ID_KEY)
+  } catch {
+    // best-effort
+  }
+}
 
 /**
  * Read the persisted pinned entry IDs from localStorage.
@@ -97,6 +134,9 @@ export interface AppStore {
   setProvider: (p: SttProviderName) => void
   toggleListening: () => void
 
+  // Session management
+  endSession: () => void
+
   // Live transcript (latest finalized line, for the status area)
   lastTranscript: string
 
@@ -125,7 +165,8 @@ export function useAppStore(): AppStore {
 
   const scannerRef = useRef<Scanner | null>(null)
   const sttRef = useRef<SttProvider | null>(null)
-  const sessionIdRef = useRef<string | null>(null)
+  // Restored from localStorage on mount so the session survives page reloads.
+  const sessionIdRef = useRef<string | null>(readSessionId())
   // Latest pinned names, read lazily so setKeyterms always sees fresh values.
   const pinnedNamesRef = useRef<string[]>([])
   // Common-term keyterm seed, validated against the loaded compendium.
@@ -210,8 +251,31 @@ export function useAppStore(): AppStore {
     }
 
     // Persist the segment (best-effort; tolerates an absent backend).
+    // If the backend returns 404 the session is stale — clear it and create a
+    // fresh one so the segment is not silently dropped.
     const sid = sessionIdRef.current
-    if (sid) void postTranscript(sid, [seg])
+    if (sid) {
+      void postTranscript(sid, [seg]).then(async (result) => {
+        if (result === 'stale') {
+          // TODO: segments that arrive while sessionIdRef.current is null (between
+          // the clear below and the createSession() await) are silently skipped by
+          // the `if (sid)` guard above. This is pre-existing behaviour that the
+          // retry path exposes more visibly on fast STT streams. A creatingSession
+          // flag or a small buffer would close the window.
+          clearSessionId()
+          sessionIdRef.current = null
+          const newId = await createSession()
+          if (newId) {
+            sessionIdRef.current = newId
+            writeSessionId(newId)
+            const retryResult = await postTranscript(newId, [seg])
+            if (retryResult === 'stale') {
+              console.warn('[useAppStore] stale-session retry also returned stale; segment may be lost')
+            }
+          }
+        }
+      })
+    }
   }, [])
 
   // ---- Mic / STT lifecycle --------------------------------------------------
@@ -222,9 +286,12 @@ export function useAppStore(): AppStore {
     // Seed keyterms: pinned names first (priority), then the common-term defaults.
     stt.setKeyterms(buildKeyterms(pinnedNamesRef.current, defaultKeytermsRef.current))
 
-    // Lazily create a session to attach the transcript to (best-effort).
+    // Resume the persisted session or create a new one (best-effort).
+    // The guard avoids re-creating the session on mic pause/restart.
     if (!sessionIdRef.current) {
-      sessionIdRef.current = await createSession()
+      const newId = await createSession()
+      sessionIdRef.current = newId
+      if (newId) writeSessionId(newId)
     }
 
     await stt.start({
@@ -252,6 +319,18 @@ export function useAppStore(): AppStore {
     if (active) void stopListening()
     else void startListening()
   }, [sttState, startListening, stopListening])
+
+  // Deliberately end the current session so the next startListening creates a
+  // fresh one (different D&D evening).
+  const endSession = useCallback(() => {
+    // Any postTranscript calls already in flight will complete normally: they
+    // hold the old session ID and the session still exists server-side until
+    // the backend expires it, so the segments reach their destination.
+    clearSessionId()
+    sessionIdRef.current = null
+    // If the mic is active, stop it too — the user is done with this session.
+    if (sttRef.current) void stopListening()
+  }, [stopListening])
 
   // Changing provider mid-session: stop the current stream so the next start
   // picks up the new provider.
@@ -301,6 +380,7 @@ export function useAppStore(): AppStore {
       provider,
       setProvider,
       toggleListening,
+      endSession,
       lastTranscript,
       pinned,
       isPinned,
@@ -317,6 +397,7 @@ export function useAppStore(): AppStore {
       provider,
       setProvider,
       toggleListening,
+      endSession,
       lastTranscript,
       pinned,
       isPinned,

@@ -11,6 +11,7 @@ interface TopBarProps {
   compendium: Compendium
   sttState: SttState
   onToggleListening: () => void
+  onEndSession: () => void
   provider: SttProviderName
   onSetProvider: (p: SttProviderName) => void
   lastTranscript: string
@@ -39,6 +40,7 @@ export function TopBar({
   compendium,
   sttState,
   onToggleListening,
+  onEndSession,
   provider,
   onSetProvider,
   lastTranscript,
@@ -79,6 +81,17 @@ export function TopBar({
       </div>
 
       <SearchBox compendium={compendium} onSelect={onSelect} />
+
+      <div className="mt-2 flex justify-end">
+        <button
+          type="button"
+          onClick={onEndSession}
+          title="End this session and start fresh next time"
+          className="rounded-lg border border-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent)] active:bg-[var(--color-surface-2)]"
+        >
+          End session
+        </button>
+      </div>
 
       <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
     </header>
