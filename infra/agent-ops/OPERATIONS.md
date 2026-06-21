@@ -94,7 +94,9 @@ Three loops touch the same issues, labels, and PR branches. The rules that keep 
      authoritative direction; and, on **`help wanted`** issues only, **expand the body and post a
      role-headed analysis comment** (opinions, relevant files, design considerations) and **split** an
      issue into well-specced children when the discussion asks for it (creating the children + linking
-     them from the parent). It **never** applies/removes the gating labels (`ready` / `priority:*` /
+     them from the parent); and **reply (one role-headed comment) to a comment that directly addresses
+     triage** on **any** issue (answering its question / opinion request — TRIAGE.md §3e). It **never**
+     applies/removes the gating labels (`ready` / `priority:*` /
      `blocked` / `in-progress` / `needs-attention`), **never closes or restructures** the human's
      issues (additive + body-edit only — it leaves the parent open for the human to close), and never
      opens code PRs or touches branches.

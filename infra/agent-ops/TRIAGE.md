@@ -62,15 +62,24 @@ $gh = "C:\Program Files\GitHub CLI\gh.exe"
 $repo = "bendboaz/dnd-session-assistant"
 
 # Fetch all open issues (up to 200; increase --limit if the backlog grows).
-# `comments` is included so the assessment is comment-aware (§3e) — human comments
-# override the body (e.g. a "wait for X" comment disqualifies a ready candidate).
 $issuesRaw = & $gh issue list `
     --repo $repo `
     --state open `
     --limit 200 `
-    --json number,title,labels,body,comments,createdAt,updatedAt
+    --json number,title,labels,body,createdAt,updatedAt
 
 $issues = $issuesRaw | ConvertFrom-Json
+
+# IMPORTANT — fetch each issue's comment thread PER ISSUE, never from the list call.
+# `gh issue list --json comments` is UNRELIABLE: wrong counts + empty/truncated bodies
+# (observed: an issue with 3 real comments came back as 1 comment with an empty body).
+# `gh issue view N --json comments` returns the true thread. §3e's comment-awareness depends
+# entirely on this — with the broken list data, comment-awareness silently does nothing
+# (this is exactly the bug where #3 / #6 were wrongly recommended as ready).
+foreach ($issue in $issues) {
+    $full = & $gh issue view $issue.number --repo $repo --json comments | ConvertFrom-Json
+    $issue | Add-Member -NotePropertyName comments -NotePropertyValue @($full.comments) -Force
+}
 ```
 
 **Find the triage-report issue number** (so it can be excluded from assessment):
@@ -165,13 +174,15 @@ unmet. (Triage proposes the `blocked` flag in the report; the human sets the lab
 
 ### 3e. Read the discussion (comments override the body)
 
-Read every issue's **comment thread**, not just the body. Human comments are authoritative and can
-change an issue's classification:
+Read every issue's **comment thread** (fetched per-issue in §2 — the list call's comments are
+unreliable). Human comments are authoritative and can change an issue's classification:
 
-- A **"wait for X first" / "let's hold on this"** comment ⇒ the issue is **not** a `ready` candidate
-  even if the body is complete. Classify it as **waiting** in the report, with the reason and what it's
-  waiting on. (Example: a "wait for real-session transcripts before building" comment on a matching
-  issue ⇒ waiting-on-data, not ready.)
+- A **"not ready" / "not yet" / "wait for X" / "let's hold on this"** comment ⇒ the issue is
+  **WAITING**. It **must NOT** appear as a `ready` candidate (§4) **or** in the proposed dispatcher
+  batch (§5), no matter how complete the body is. Record it under **Waiting** in the report with the
+  reason + what it's waiting on. (Real examples: **#3** "wait for real-session transcripts" ⇒
+  waiting-on-data; **#6** "Not ready yet, … want basic functionality up first" ⇒ waiting. Neither is a
+  ready candidate.)
 - A comment that **adds scope, splits, or re-prioritises** ⇒ fold it into the assessment (and, if the
   issue is `help wanted`, into the grooming in §5b).
 - A comment that **resolves a blocker** ⇒ the dependency may now be clear.
@@ -179,6 +190,14 @@ change an issue's classification:
 When the body and a later human comment disagree, **the comment wins.** Note the divergence in the
 report so the human can reconcile the body if they want (triage edits non-`help-wanted` bodies — only
 the report records the discrepancy).
+
+**Reply to comments addressed to triage.** If a human comment **directly addresses triage** — names it
+("Triage — …"), asks it a question, or requests its opinion/decision — post **one** `🛠️ [Implementing
+Agent]` reply that actually answers it (your assessment/opinion + recommended next step), via
+`--body-file`. This applies on **any** issue, not just `help wanted` (e.g. #5's "Triage — waiting for
+your opinion on this"). Be **idempotent**: skip if a `🛠️` reply already sits *newer* than that human
+comment; only answer when it's still unanswered. Replying informs the human and never applies a gating
+label — the human still decides.
 
 ### 3f. `meta` issues are context, not backlog
 
