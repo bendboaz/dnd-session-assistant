@@ -195,9 +195,26 @@ the report records the discrepancy).
 ("Triage — …"), asks it a question, or requests its opinion/decision — post **one** `🛠️ [Implementing
 Agent]` reply that actually answers it (your assessment/opinion + recommended next step), via
 `--body-file`. This applies on **any** issue, not just `help wanted` (e.g. #5's "Triage — waiting for
-your opinion on this"). Be **idempotent**: skip if a `🛠️` reply already sits *newer* than that human
-comment; only answer when it's still unanswered. Replying informs the human and never applies a gating
-label — the human still decides.
+your opinion on this"). Replying informs the human and never applies a gating label — the human still
+decides.
+
+**Idempotency — check before you post.** The thread you need is already in hand: `$issue.comments`
+(fetched per-issue in §2) carries every comment's `author.login`, `body`, and `createdAt`. Use it —
+do **not** post blind. A triage-directed human comment is *answered* iff a `🛠️ [Implementing Agent]`
+reply exists with `createdAt` **newer** than that human comment. Skip answered comments; reply only to
+still-unanswered ones. Skeleton:
+
+```powershell
+# $triggerComment = the human comment that addresses triage (from $issue.comments)
+$answered = $issue.comments | Where-Object {
+    $_.body -like '*[Implementing Agent]*' -and
+    [datetime]$_.createdAt -gt [datetime]$triggerComment.createdAt
+}
+if (-not $answered) {
+    # write the reply body to a temp file, ASCII, then:
+    & $gh issue comment $issue.number --repo $repo --body-file $replyFile
+}
+```
 
 ### 3f. `meta` issues are context, not backlog
 
