@@ -205,13 +205,13 @@ reply exists with `createdAt` **newer** than that human comment. Skip answered c
 still-unanswered ones. Skeleton:
 
 ```powershell
-# 1. Identify triage-directed human comments: a human (not the bot) comment whose body
-#    addresses triage by name / asks it a question. Tune the bot login + cues to taste;
-#    judgement still applies — these patterns are a starting filter, not the whole test.
-$botLogin = 'bendboaz'  # comments post from the human's account; role header marks agent ones
+# 1. Identify triage-directed comments. NOTE: every comment posts from the human's
+#    account, so author.login can't tell human from agent — the ROLE HEADER is the only
+#    signal. A trigger is a non-agent comment that names triage or asks a question.
+#    These patterns are a starting filter, not the whole test — judgement still applies.
 $triggers = $issue.comments | Where-Object {
-    $_.body -notlike '*[Implementing Agent]*' -and          # not an agent reply
-    $_.body -notlike '*[Reviewing Agent]*' -and
+    $_.body -notlike '*[Implementing Agent]*' -and          # exclude our own replies
+    $_.body -notlike '*[Reviewing Agent]*' -and             # exclude CI review comments
     ($_.body -match '(?i)\btriage\b' -or $_.body -match '\?')
 }
 foreach ($triggerComment in $triggers) {
@@ -221,8 +221,12 @@ foreach ($triggerComment in $triggers) {
         [datetime]$_.createdAt -gt [datetime]$triggerComment.createdAt
     }
     if (-not $answered) {
-        # write the reply body to a temp file, ASCII, then:
+        # 3. Compose the reply (role header first) and post via --body-file (ASCII, no BOM).
+        $replyFile = [System.IO.Path]::GetTempFileName()
+        $reply = "🛠️ **[Implementing Agent]**`n`n<your assessment + recommended next step>"
+        Set-Content -Path $replyFile -Value $reply -Encoding ascii
         & $gh issue comment $issue.number --repo $repo --body-file $replyFile
+        Remove-Item $replyFile
     }
 }
 ```
