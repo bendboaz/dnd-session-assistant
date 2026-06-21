@@ -146,11 +146,11 @@ $ordered = $dispatchable | Sort-Object -Property @(
 
 ## 3. Concurrency gate
 
-Count open `claude/agent/issue-*` PRs. If the count is at or above the cap (default **3**), stop.
+Count open `claude/agent/issue-*` PRs. If the count is at or above the cap (default **1**), stop.
 Do not claim any new issue.
 
 ```powershell
-$cap = 3
+$cap = 1
 
 $openAgentPRCount = ($openAgentPRs | Where-Object {
     $_.headRefName -like "claude/agent/issue-*"
