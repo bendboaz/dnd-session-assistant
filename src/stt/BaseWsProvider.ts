@@ -21,6 +21,7 @@ import type {
   TranscriptSegment,
 } from './types'
 import { startMic, type MicCapture, MIC_SAMPLE_RATE } from './mic'
+import { getIdToken, signOut } from '../auth/firebase'
 import { debugLog } from '../lib/logger'
 
 /** What a concrete provider must supply to the shared lifecycle. */
@@ -149,9 +150,21 @@ export abstract class BaseWsProvider implements SttProvider {
     if (this.token && now < this.tokenExpiresAt - TOKEN_REFRESH_LEAD_S * 1000) {
       return this.token
     }
+    // Attach the Firebase ID token when signed in; omit it in local dev so
+    // DEV_AUTH_BYPASS on the backend still works without a real user session.
+    const idToken = await getIdToken()
+    const authHeader: Record<string, string> = idToken
+      ? { Authorization: `Bearer ${idToken}` }
+      : {}
     const res = await fetch(`${apiBase()}/api/stt-token?provider=${this.name}`, {
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', ...authHeader },
     })
+    if (res.status === 401) {
+      // Session expired mid-stream — sign out so the SignInGate prompts re-auth.
+      console.warn('[stt] stt-token returned 401 — signing out to prompt re-auth')
+      void signOut()
+      throw new Error('stt-token: 401 Unauthorized')
+    }
     if (!res.ok) {
       throw new Error(`stt-token request failed: ${res.status} ${res.statusText}`)
     }

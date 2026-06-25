@@ -57,6 +57,36 @@ def local_storage_dir() -> str:
     return os.getenv("LOCAL_STORAGE_DIR", "./data")
 
 
+# --- Auth (Firebase) ---
+def allowed_emails() -> list[str]:
+    """Comma-separated allowlist of Google account emails permitted to sign in.
+
+    Entries are stripped, lowercased, and empty strings dropped — same pattern as
+    `allowed_origins()`.  An empty list means *nobody* is allowed (fail-closed).
+    """
+    return [
+        e.strip().lower()
+        for e in os.getenv("ALLOWED_EMAILS", "").split(",")
+        if e.strip()
+    ]
+
+
+def dev_auth_bypass() -> bool:
+    """When set, Firebase auth verification is skipped entirely (LOCAL DEV only).
+
+    Hard-disabled on Cloud Run: the platform always sets ``K_SERVICE``, so even if
+    ``DEV_AUTH_BYPASS`` leaks into a production env var it can never open the gate.
+    """
+    if os.getenv("K_SERVICE"):
+        return False
+    return _bool("DEV_AUTH_BYPASS", default=False)
+
+
+# --- Cost guard ---
+# The per-request transcript segment cap is enforced statically in models.py
+# (AppendTranscriptRequest.segments, max_length=1000) — a fixed safety ceiling.
+
+
 def data_collection_enabled() -> bool:
     """Whether to persist near-miss tokens alongside session transcripts.
 

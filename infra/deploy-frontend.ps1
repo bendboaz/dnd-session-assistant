@@ -2,7 +2,12 @@
 # Deploy Vite + React frontend to Firebase Hosting
 
 # Configuration
-$GCP_PROJECT_ID = "YOUR_GCP_PROJECT_ID"
+$GCP_PROJECT_ID = "dnd-session-assistant"
+
+# NOTE: the build reads VITE_API_BASE + VITE_FIREBASE_* from a root .env file (Vite
+# loads it automatically). Copy .env.example -> .env and fill it in BEFORE deploying,
+# else the bundle ships with no backend URL / no Firebase config. Delete a stale dist/
+# first to force a rebuild after changing .env.
 
 # Ensure gcloud is authenticated
 Write-Host "Authenticating with gcloud..."

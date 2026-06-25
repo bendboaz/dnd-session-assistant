@@ -1,0 +1,15 @@
+rules_version = '2';
+
+// Lock Firestore shut to all direct client access.
+//
+// The browser NEVER talks to Firestore directly — it only calls the FastAPI
+// backend, which writes via the Admin SDK (the runtime service account bypasses
+// these rules). Denying everything here means a leaked Firebase web config or a
+// stolen ID token cannot read or write the database directly.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

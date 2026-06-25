@@ -1,14 +1,19 @@
 name: Deploy
 
-# Manual trigger until GCP is configured (project id, Artifact Registry, secrets,
-# Firebase). Re-enable `push: branches: [main]` once infra/SETUP-GCP.md is done.
+# Manual trigger for now. Switch to `push: branches: [main]` (task #9) only AFTER a
+# successful manual deploy has proven the GCP wiring (Artifact Registry, secrets,
+# IAM, Firestore) end-to-end.
 on:
   workflow_dispatch:
 
 env:
-  GCP_PROJECT_ID: YOUR_GCP_PROJECT_ID
-  GCP_REGION: us-central1
+  GCP_PROJECT_ID: dnd-session-assistant
+  GCP_REGION: europe-west1
   BACKEND_SERVICE_NAME: dnd-session-backend
+  # Cost / abuse guards (mirror infra/deploy-backend.ps1).
+  MAX_INSTANCES: '2'
+  CONCURRENCY: '40'
+  FRONTEND_ORIGINS: 'https://dnd-session-assistant.web.app,https://dnd-session-assistant.firebaseapp.com'
 
 jobs:
   deploy-backend:
@@ -30,12 +35,18 @@ jobs:
             backend/
 
       - name: Deploy to Cloud Run
+        # Public at the IAM layer; every paid route is gated by Firebase Auth +
+        # ALLOWED_EMAILS in the app (backend/auth.py).
         run: |
           gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
             --image ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/docker-repo/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
-            --allow-unauthenticated
+            --allow-unauthenticated \
+            --max-instances ${{ env.MAX_INSTANCES }} \
+            --concurrency ${{ env.CONCURRENCY }} \
+            --set-secrets "SONIOX_API_KEY=SONIOX_API_KEY:latest,DEEPGRAM_API_KEY=DEEPGRAM_API_KEY:latest,ALLOWED_EMAILS=ALLOWED_EMAILS:latest" \
+            --set-env-vars "GCP_PROJECT=${{ env.GCP_PROJECT_ID }},ALLOWED_ORIGINS=${{ env.FRONTEND_ORIGINS }},STT_TOKEN_TTL_SECONDS=300"
 
   deploy-frontend:
     runs-on: ubuntu-latest
@@ -48,6 +59,16 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+        # Vite inlines these at build time. Firebase web config is non-secret, so it
+        # lives in repo Actions *variables* (vars.*); VITE_API_BASE is the Cloud Run URL.
+        env:
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
 
       - uses: google-github-actions/auth@v2
         with:

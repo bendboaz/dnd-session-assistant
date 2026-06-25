@@ -1,50 +1,35 @@
 # GCP Setup Instructions
 
-This document outlines the steps to set up GCP infrastructure for the D&D Session Assistant project.
+Setup for deploying the D&D Session Assistant to GCP. **Project id:** `dnd-session-assistant`.
+**Region:** `europe-west1` (Cloud Run + Firestore). All commands are PowerShell (Windows).
 
-## Prerequisites
+> Status: the GCP project, billing, budget alerts, `gcloud`/`firebase` CLIs, Firebase Auth
+> (Google provider), and the three Secret Manager secrets (`SONIOX_API_KEY`,
+> `DEEPGRAM_API_KEY`, `ALLOWED_EMAILS`) are already set up. This doc documents the full
+> path for reproducibility and lists the remaining provisioning steps.
 
-### Install gcloud CLI
-
-The `gcloud` command-line tool is not yet installed on this machine. Download and install it from:
-https://cloud.google.com/sdk/docs/install
-
-After installation, initialize gcloud:
 ```powershell
-gcloud init
-gcloud auth login
-gcloud config set project YOUR_GCP_PROJECT_ID
+$PROJECT_ID = "dnd-session-assistant"
+$REGION     = "europe-west1"
+gcloud config set project $PROJECT_ID
 ```
 
-## Enable Required APIs
-
-Run the following commands to enable necessary GCP APIs:
+## 1. Enable required APIs
 
 ```powershell
-$PROJECT_ID = "YOUR_GCP_PROJECT_ID"
-
-# Enable Cloud Run
-gcloud services enable run.googleapis.com --project=$PROJECT_ID
-
-# Enable Artifact Registry
-gcloud services enable artifactregistry.googleapis.com --project=$PROJECT_ID
-
-# Enable Firestore
-gcloud services enable firestore.googleapis.com --project=$PROJECT_ID
-
-# Enable Secret Manager
-gcloud services enable secretmanager.googleapis.com --project=$PROJECT_ID
-
-# Enable Cloud Build
-gcloud services enable cloudbuild.googleapis.com --project=$PROJECT_ID
+gcloud services enable `
+  run.googleapis.com `
+  artifactregistry.googleapis.com `
+  firestore.googleapis.com `
+  secretmanager.googleapis.com `
+  cloudbuild.googleapis.com `
+  identitytoolkit.googleapis.com `
+  --project=$PROJECT_ID
 ```
 
-## Create Artifact Registry Repository
+## 2. Artifact Registry
 
 ```powershell
-$PROJECT_ID = "YOUR_GCP_PROJECT_ID"
-$REGION = "us-central1"
-
 gcloud artifacts repositories create docker-repo `
   --repository-format=docker `
   --location=$REGION `
@@ -52,145 +37,118 @@ gcloud artifacts repositories create docker-repo `
   --description="Docker repository for D&D Session Assistant"
 ```
 
-## Create and Configure Secrets
+## 3. Firestore (Native mode)
 
-### Create Speech-to-Text API Secret (Soniox)
-
-```powershell
-$PROJECT_ID = "YOUR_GCP_PROJECT_ID"
-
-# Create the secret
-echo "YOUR_SONIOX_API_KEY" | gcloud secrets create SONIOX_API_KEY `
-  --data-file=- `
-  --project=$PROJECT_ID
-
-# Grant Cloud Run access
-gcloud secrets add-iam-policy-binding SONIOX_API_KEY `
-  --member=serviceAccount:YOUR_CLOUD_RUN_SA@$PROJECT_ID.iam.gserviceaccount.com `
-  --role=roles/secretmanager.secretAccessor `
-  --project=$PROJECT_ID
-```
-
-### Create Speech-to-Text API Secret (Deepgram)
+> The Firestore **location is permanent** once created. We use `europe-west1`.
 
 ```powershell
-$PROJECT_ID = "YOUR_GCP_PROJECT_ID"
-
-# Create the secret
-echo "YOUR_DEEPGRAM_API_KEY" | gcloud secrets create DEEPGRAM_API_KEY `
-  --data-file=- `
-  --project=$PROJECT_ID
-
-# Grant Cloud Run access
-gcloud secrets add-iam-policy-binding DEEPGRAM_API_KEY `
-  --member=serviceAccount:YOUR_CLOUD_RUN_SA@$PROJECT_ID.iam.gserviceaccount.com `
-  --role=roles/secretmanager.secretAccessor `
-  --project=$PROJECT_ID
-```
-
-## Create Service Account for GitHub Actions Deployment
-
-Create a service account with permissions to deploy:
-
-```powershell
-$PROJECT_ID = "YOUR_GCP_PROJECT_ID"
-$SA_NAME = "github-actions"
-$SA_EMAIL = "$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
-
-# Create the service account
-gcloud iam service-accounts create $SA_NAME `
-  --display-name="GitHub Actions Deployment Account" `
-  --project=$PROJECT_ID
-
-# Grant necessary roles
-gcloud projects add-iam-policy-binding $PROJECT_ID `
-  --member=serviceAccount:$SA_EMAIL `
-  --role=roles/run.admin
-
-gcloud projects add-iam-policy-binding $PROJECT_ID `
-  --member=serviceAccount:$SA_EMAIL `
-  --role=roles/artifactregistry.writer
-
-gcloud projects add-iam-policy-binding $PROJECT_ID `
-  --member=serviceAccount:$SA_EMAIL `
-  --role=roles/firebase.admin
-
-gcloud projects add-iam-policy-binding $PROJECT_ID `
-  --member=serviceAccount:$SA_EMAIL `
-  --role=roles/secretmanager.secretAccessor
-
-# Download and save the service account key
-gcloud iam service-accounts keys create github-actions-key.json `
-  --iam-account=$SA_EMAIL `
-  --project=$PROJECT_ID
-
-# Store this file securely and add its contents as the GCP_SA_KEY secret in GitHub
-```
-
-## Initialize Firestore Database
-
-```powershell
-$PROJECT_ID = "YOUR_GCP_PROJECT_ID"
-
 gcloud firestore databases create `
-  --location=us-central1 `
+  --location=$REGION `
   --type=firestore-native `
   --project=$PROJECT_ID
 ```
 
-## GitHub Actions Secrets
-
-Add the following secrets to your GitHub repository. Go to **Settings** → **Secrets and variables** → **Actions**.
-
-### Required Secrets
-
-1. **ANTHROPIC_API_KEY**
-   - Description: Anthropic API key for AI code reviews
-   - Value: Your Anthropic API key (see https://console.anthropic.com)
-
-2. **GCP_SA_KEY**
-   - Description: GCP service account JSON key for deployments
-   - Value: Contents of `github-actions-key.json` created above
-
-### Optional Configuration Secrets (if you prefer to override defaults)
-
-3. **GCP_PROJECT_ID** (optional; see `.github/workflows/deploy.yml` for default)
-   - Your GCP project ID
-
-4. **GCP_REGION** (optional; see `.github/workflows/deploy.yml` for default)
-   - Default: `us-central1`
-
-5. **BACKEND_SERVICE_NAME** (optional; see `.github/workflows/deploy.yml` for default)
-   - Default: `dnd-session-backend`
-
-## Verification
-
-After setup, verify everything is working:
+Lock the database to backend-only access by deploying the repo's rules (the browser never
+touches Firestore directly — only the backend, via the Admin SDK, does):
 
 ```powershell
-# Test gcloud authentication
-gcloud auth list
+firebase deploy --only firestore:rules --project=$PROJECT_ID
+```
 
-# List enabled APIs
-gcloud services list --enabled --project=$PROJECT_ID
+(See `firestore.rules` — it denies all direct client read/write.)
 
-# List secrets
+## 4. Firebase Authentication
+
+Already enabled (Google sign-in provider). Once the Hosting URL exists, add it under
+**Firebase console → Authentication → Settings → Authorized domains**
+(`dnd-session-assistant.web.app` / `.firebaseapp.com`).
+
+## 5. Secrets (Secret Manager)
+
+The three secrets already exist (`SONIOX_API_KEY`, `DEEPGRAM_API_KEY`, `ALLOWED_EMAILS`),
+created with a Windows-safe helper that avoids the trailing-newline/BOM corruption of the
+`echo "..." | gcloud` pattern. `ALLOWED_EMAILS` is a comma-separated allowlist of Google
+account emails permitted to sign in. To rotate a value, add a new version:
+
+```powershell
+$tmp = New-TemporaryFile
+[System.IO.File]::WriteAllText($tmp.FullName, "NEW_VALUE")   # no newline, no BOM
+gcloud secrets versions add SONIOX_API_KEY --data-file="$($tmp.FullName)" --project=$PROJECT_ID
+Remove-Item $tmp.FullName -Force
+```
+
+### Grant the Cloud Run runtime service account access
+
+Cloud Run mounts the secrets as env vars (`--set-secrets`), so the **runtime** service
+account needs `secretmanager.secretAccessor`. The default runtime SA is the Compute
+default SA:
+
+```powershell
+$PNUM = gcloud projects describe $PROJECT_ID --format="value(projectNumber)"
+$RUNTIME_SA = "$PNUM-compute@developer.gserviceaccount.com"
+
+foreach ($s in @("SONIOX_API_KEY","DEEPGRAM_API_KEY","ALLOWED_EMAILS")) {
+  gcloud secrets add-iam-policy-binding $s `
+    --member="serviceAccount:$RUNTIME_SA" `
+    --role="roles/secretmanager.secretAccessor" `
+    --project=$PROJECT_ID
+}
+```
+
+## 6. Service account for GitHub Actions (CI/CD deploys)
+
+```powershell
+$SA_NAME  = "github-actions"
+$SA_EMAIL = "$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
+
+gcloud iam service-accounts create $SA_NAME `
+  --display-name="GitHub Actions Deployment Account" --project=$PROJECT_ID
+
+foreach ($role in @("roles/run.admin","roles/artifactregistry.writer","roles/firebase.admin","roles/secretmanager.secretAccessor","roles/iam.serviceAccountUser","roles/cloudbuild.builds.editor")) {
+  gcloud projects add-iam-policy-binding $PROJECT_ID `
+    --member="serviceAccount:$SA_EMAIL" --role=$role
+}
+
+# Key file -> store securely, add contents as the GCP_SA_KEY GitHub Actions secret.
+gcloud iam service-accounts keys create github-actions-key.json `
+  --iam-account=$SA_EMAIL --project=$PROJECT_ID
+```
+
+## 7. GitHub Actions: secrets & variables
+
+In the repo: **Settings → Secrets and variables → Actions**.
+
+**Secrets** (sensitive):
+- `GCP_SA_KEY` — contents of `github-actions-key.json` above.
+- `ANTHROPIC_API_KEY` — for the AI code-review workflow (if not already set).
+
+**Variables** (non-secret, inlined into the frontend build by Vite — see `deploy.yml`):
+- `VITE_API_BASE` — the deployed Cloud Run URL (fill after the first backend deploy).
+- `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`,
+  `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_MESSAGING_SENDER_ID`,
+  `VITE_FIREBASE_STORAGE_BUCKET` — from Firebase console → Project settings → Your apps
+  (register a Web app if you haven't). These are non-secret but project-specific.
+
+## 8. Deploy
+
+**Manual (PowerShell):**
+```powershell
+.\infra\deploy-backend.ps1     # build container -> Cloud Run (cost guards + secrets baked in)
+# Then set VITE_API_BASE + VITE_FIREBASE_* in a local .env (copy .env.example), and:
+.\infra\deploy-frontend.ps1    # build -> Firebase Hosting
+```
+
+**CI/CD:** `.github/workflows/deploy.yml` runs the same steps. It is `workflow_dispatch`
+only until a manual deploy proves the wiring; then switch the trigger to `push: [main]`.
+
+## 9. Verification
+
+```powershell
+gcloud run services describe dnd-session-backend --region=$REGION --format="value(status.url)"
+Invoke-RestMethod "$URL/api/health"                       # -> { status = ok }
+Invoke-RestMethod "$URL/api/stt-token?provider=soniox"    # -> 401 (no auth) — expected
 gcloud secrets list --project=$PROJECT_ID
-
-# List service accounts
-gcloud iam service-accounts list --project=$PROJECT_ID
 ```
 
-## Deploy Manually (without GitHub)
-
-Use the PowerShell scripts in the `infra/` directory:
-
-```powershell
-# Deploy backend
-.\infra\deploy-backend.ps1
-
-# Deploy frontend
-.\infra\deploy-frontend.ps1
-```
-
-Make sure to update the configuration variables at the top of each script with your project details.
+The `/api/stt-token` call returning 401 without a Firebase ID token is the auth gate
+working as intended.

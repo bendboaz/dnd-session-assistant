@@ -44,18 +44,32 @@ def no_firestore_env() -> Generator[None, None, None]:
 
 
 @pytest.fixture()
-def client(tmp_storage: Path, no_firestore_env: None) -> TestClient:
-    """FastAPI TestClient backed by local JSONL storage (no Firestore, no real keys)."""
+def client(tmp_storage: Path, no_firestore_env: None) -> Generator[TestClient, None, None]:
+    """FastAPI TestClient backed by local JSONL storage (no Firestore, no real keys).
+
+    Auth is bypassed (DEV_AUTH_BYPASS=1) so tests that aren't exercising the auth
+    gate don't need to mint/mock Firebase tokens. The auth gate itself is covered
+    by test_auth.py, which builds its own client with the bypass off.
+    """
+    import importlib
+
+    old_bypass = os.environ.get("DEV_AUTH_BYPASS")
+    os.environ["DEV_AUTH_BYPASS"] = "1"
+
     # Pop main and its local dependencies from the module cache so re-import
     # re-runs init_storage() with the patched env, giving each test a fresh
     # storage instance.  Popping dependents avoids stale cached state when the
     # module graph grows.
-    import importlib
-
     for _mod in ("main", "storage", "stt_tokens"):
         sys.modules.pop(_mod, None)
     main_mod = importlib.import_module("main")
-    return TestClient(main_mod.app)
+    try:
+        yield TestClient(main_mod.app)
+    finally:
+        if old_bypass is None:
+            os.environ.pop("DEV_AUTH_BYPASS", None)
+        else:
+            os.environ["DEV_AUTH_BYPASS"] = old_bypass
 
 
 @pytest.fixture()

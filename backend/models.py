@@ -50,7 +50,12 @@ class Segment(BaseModel):
 
 
 class AppendTranscriptRequest(BaseModel):
-    segments: list[Segment]
+    # Hard cap at 1000 segments per request — protects against runaway Firestore
+    # writes.  The frontend chunks backfill into ≤100-segment batches, so 1000
+    # is a comfortable ceiling that never rejects legitimate traffic.  Requests
+    # that exceed this limit get a 422 Unprocessable Entity automatically from
+    # Pydantic before any route handler runs.
+    segments: list[Segment] = Field(..., max_length=1000)
 
 
 class AppendTranscriptResponse(BaseModel):

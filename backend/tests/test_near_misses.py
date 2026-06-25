@@ -63,9 +63,12 @@ class TestNearMissGating:
 
 @pytest.fixture()
 def data_collection_client(tmp_storage: Path, no_firestore_env: None):
-    """TestClient with ENABLE_DATA_COLLECTION=true."""
+    """TestClient with ENABLE_DATA_COLLECTION=true (and auth bypassed)."""
     old = os.environ.get("ENABLE_DATA_COLLECTION")
+    old_bypass = os.environ.get("DEV_AUTH_BYPASS")
     os.environ["ENABLE_DATA_COLLECTION"] = "true"
+    # Bypass the Firebase auth gate — these tests exercise data collection, not auth.
+    os.environ["DEV_AUTH_BYPASS"] = "1"
     try:
         for _mod in ("main", "storage", "stt_tokens", "config"):
             sys.modules.pop(_mod, None)
@@ -79,6 +82,10 @@ def data_collection_client(tmp_storage: Path, no_firestore_env: None):
             os.environ.pop("ENABLE_DATA_COLLECTION", None)
         else:
             os.environ["ENABLE_DATA_COLLECTION"] = old
+        if old_bypass is None:
+            os.environ.pop("DEV_AUTH_BYPASS", None)
+        else:
+            os.environ["DEV_AUTH_BYPASS"] = old_bypass
 
 
 class TestNearMissEndpoint:
