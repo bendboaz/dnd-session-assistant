@@ -8,7 +8,29 @@ on:
   pull_request:
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'src/**'
+              - 'public/**'
+              - 'package*.json'
+              - 'vite.config.*'
+              - 'tsconfig*.json'
+              - 'index.html'
+            backend:
+              - 'backend/**'
+
   frontend:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,12 +38,19 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm run build
-      - run: npm test --if-present
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npm ci
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npx tsc --noEmit
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npm run build
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npm test --if-present
+      - if: needs.changes.outputs.frontend != 'true'
+        run: echo "No frontend changes detected — build/test skipped."
 
   backend:
+    needs: changes
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,14 +62,18 @@ jobs:
           python-version: '3.12'
       # Backend modules import as top-level (e.g. `from config import ...`), so pytest
       # must run from backend/. pytest isn't a runtime dep, so install it explicitly.
-      - run: pip install -r requirements.txt pytest
+      - if: needs.changes.outputs.backend == 'true'
+        run: pip install -r requirements.txt pytest
       - name: Run backend tests if present
+        if: needs.changes.outputs.backend == 'true'
         run: |
           if [ -d tests ] || ls test_*.py >/dev/null 2>&1; then
             pytest
           else
             echo "No backend tests yet; skipping."
           fi
+      - if: needs.changes.outputs.backend != 'true'
+        run: echo "No backend changes detected — install/test skipped."
 
   agent-tools:
     # The agent-ops token minter lives in infra/, outside the backend pytest path,

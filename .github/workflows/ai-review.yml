@@ -2,6 +2,16 @@ name: AI Review
 
 on:
   pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'backend/**'
+      - 'package*.json'
+      - 'vite.config.*'
+      - 'tsconfig*.json'
+      - 'index.html'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
 
 permissions:
   contents: read
