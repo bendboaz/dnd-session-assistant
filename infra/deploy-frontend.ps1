@@ -2,7 +2,7 @@
 # Deploy Vite + React frontend to Firebase Hosting
 
 # Configuration
-$GCP_PROJECT_ID = "dnd-session-assistant"
+$GCP_PROJECT_ID = "dnd-session-assistant-52633"
 
 # NOTE: the build reads VITE_API_BASE + VITE_FIREBASE_* from a root .env file (Vite
 # loads it automatically). Copy .env.example -> .env and fill it in BEFORE deploying,
