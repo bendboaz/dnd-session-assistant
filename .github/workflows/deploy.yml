@@ -42,8 +42,8 @@ jobs:
         # escaping issues with ALLOWED_ORIGINS (which is itself a comma-separated list).
         run: |
           cat > /tmp/backend-env.yaml << 'EOF'
-          GCP_PROJECT: dnd-session-assistant-52633
-          ALLOWED_ORIGINS: "https://dnd-session-assistant-52633.web.app,https://dnd-session-assistant-52633.firebaseapp.com"
+          GCP_PROJECT: ${{ env.GCP_PROJECT_ID }}
+          ALLOWED_ORIGINS: "${{ env.FRONTEND_ORIGINS }}"
           STT_TOKEN_TTL_SECONDS: "300"
           EOF
           gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
@@ -92,6 +92,6 @@ jobs:
           SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: |
           echo "$SA_KEY" > /tmp/sa-key.json
+          trap "rm -f /tmp/sa-key.json" EXIT
           GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json \
             npx firebase-tools deploy --project ${{ env.GCP_PROJECT_ID }} --only hosting
-          rm -f /tmp/sa-key.json
