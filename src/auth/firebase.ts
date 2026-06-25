@@ -63,6 +63,10 @@ const googleProvider = new GoogleAuthProvider()
 
 /** Open the Google sign-in popup. Resolves when the user dismisses or completes. */
 export function signInWithGoogle(): Promise<void> {
+  // No-op in dev-bypass mode — never touch the SDK (no valid config to init),
+  // mirroring signOut()/getIdToken(). The SignInGate never renders the button
+  // when auth is disabled, but the exported fn stays safe if called directly.
+  if (authDisabled()) return Promise.resolve()
   return signInWithPopup(auth(), googleProvider).then(() => undefined)
 }
 
