@@ -1,15 +1,17 @@
 # GCP Setup Instructions
 
-Setup for deploying the D&D Session Assistant to GCP. **Project id:** `dnd-session-assistant`.
+Setup for deploying the D&D Session Assistant to GCP. **Project id:** `dnd-session-assistant-52633`.
 **Region:** `europe-west1` (Cloud Run + Firestore). All commands are PowerShell (Windows).
 
-> Status: the GCP project, billing, budget alerts, `gcloud`/`firebase` CLIs, Firebase Auth
-> (Google provider), and the three Secret Manager secrets (`SONIOX_API_KEY`,
-> `DEEPGRAM_API_KEY`, `ALLOWED_EMAILS`) are already set up. This doc documents the full
-> path for reproducibility and lists the remaining provisioning steps.
+> Status: the GCP project `dnd-session-assistant-52633`, `gcloud`/`firebase` CLIs, and Firebase
+> Auth (Google provider) + the web app are set up. **Billing must be on the Blaze plan**
+> (linked billing account) for Cloud Run / Artifact Registry / Cloud Build. The three Secret
+> Manager secrets (`SONIOX_API_KEY`, `DEEPGRAM_API_KEY`, `ALLOWED_EMAILS`) must be created in
+> *this* project (an earlier set was created in a stray `dnd-session-assistant` project that
+> is being deleted). This doc lists the full path for reproducibility.
 
 ```powershell
-$PROJECT_ID = "dnd-session-assistant"
+$PROJECT_ID = "dnd-session-assistant-52633"
 $REGION     = "europe-west1"
 gcloud config set project $PROJECT_ID
 ```
@@ -61,7 +63,7 @@ firebase deploy --only firestore:rules --project=$PROJECT_ID
 
 Already enabled (Google sign-in provider). Once the Hosting URL exists, add it under
 **Firebase console → Authentication → Settings → Authorized domains**
-(`dnd-session-assistant.web.app` / `.firebaseapp.com`).
+(`dnd-session-assistant-52633.web.app` / `.firebaseapp.com`).
 
 ## 5. Secrets (Secret Manager)
 

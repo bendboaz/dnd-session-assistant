@@ -2,7 +2,7 @@
 # Deploy FastAPI backend to GCP Cloud Run
 
 # Configuration
-$GCP_PROJECT_ID = "dnd-session-assistant"
+$GCP_PROJECT_ID = "dnd-session-assistant-52633"
 $GCP_REGION = "europe-west1"
 $BACKEND_SERVICE_NAME = "dnd-session-backend"
 $DOCKER_REPO = "docker-repo"
@@ -12,7 +12,7 @@ $MAX_INSTANCES = 2     # Denial-of-Wallet backstop: caps compute spend under flo
 $CONCURRENCY  = 40     # Requests per instance; 2 instances still serve a table.
 
 # CORS: the Firebase Hosting origins for this project (default domains).
-$FRONTEND_ORIGINS = "https://dnd-session-assistant.web.app,https://dnd-session-assistant.firebaseapp.com"
+$FRONTEND_ORIGINS = "https://dnd-session-assistant-52633.web.app,https://dnd-session-assistant-52633.firebaseapp.com"
 
 # Secrets are mounted from Secret Manager as env vars (never baked into the image).
 $SECRETS = "SONIOX_API_KEY=SONIOX_API_KEY:latest,DEEPGRAM_API_KEY=DEEPGRAM_API_KEY:latest,ALLOWED_EMAILS=ALLOWED_EMAILS:latest"
