@@ -85,10 +85,13 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy to Firebase Hosting
-        # FIREBASE_TOKEN is a long-lived CI token from `firebase login:ci` stored as a
-        # GitHub Actions secret. This avoids ADC compatibility issues with firebase-tools.
+        # Write GCP_SA_KEY directly so firebase-tools picks up the raw SA JSON via
+        # GOOGLE_APPLICATION_CREDENTIALS (the auth action's credential file format is
+        # gcloud-specific and not always recognised by firebase-tools).
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: |
-          npm install -g firebase-tools
-          firebase deploy --project ${{ env.GCP_PROJECT_ID }} --only hosting --token "$FIREBASE_TOKEN"
+          echo "$SA_KEY" > /tmp/sa-key.json
+          GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json \
+            npx firebase-tools deploy --project ${{ env.GCP_PROJECT_ID }} --only hosting
+          rm -f /tmp/sa-key.json
