@@ -28,11 +28,13 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Build and push backend container
+        # docker build+push runs on the GitHub runner directly — avoids Cloud Build
+        # log-streaming permission requirements.
         run: |
-          gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
-          gcloud builds submit \
-            --tag ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/docker-repo/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }} \
-            backend/
+          gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/docker-repo/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }}"
+          docker build -t "$IMAGE" backend/
+          docker push "$IMAGE"
 
       - name: Deploy to Cloud Run
         # Public at the IAM layer; every paid route is gated by Firebase Auth +
@@ -83,8 +85,10 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy to Firebase Hosting
-        # GOOGLE_APPLICATION_CREDENTIALS is set by the auth step above; firebase-tools
-        # picks it up automatically. The deprecated --token flag is not needed.
+        # FIREBASE_TOKEN is a long-lived CI token from `firebase login:ci` stored as a
+        # GitHub Actions secret. This avoids ADC compatibility issues with firebase-tools.
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
           npm install -g firebase-tools
-          firebase deploy --project ${{ env.GCP_PROJECT_ID }} --only hosting
+          firebase deploy --project ${{ env.GCP_PROJECT_ID }} --only hosting --token "$FIREBASE_TOKEN"
