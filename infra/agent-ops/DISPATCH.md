@@ -70,6 +70,23 @@ pwsh infra/agent-ops/cleanup.ps1        # or: -DryRun to preview
 
 ---
 
+## 1c. Dead-agent recovery
+
+Before selecting new work, scan for interrupted subagent sessions from prior dispatch runs and
+recover their GitHub and filesystem state. Safe + idempotent — only touches issues/worktrees that
+have a stale lock file with no live session behind them.
+
+```powershell
+$repoRoot = "D:\Users\Boaz\CodeProjects\dnd-session-assistant"
+& "$repoRoot\infra\agent-ops\scripts\dispatch-recovery.ps1"
+```
+
+See [`scripts/dispatch-recovery.ps1`](scripts/dispatch-recovery.ps1) for the detection and recovery
+logic. Summary: a lock is "dead" when its session transcript has not been modified in > 15 minutes
+**and** the lock is > 2 hours old (hard TTL for cases where the session ID is unavailable).
+
+---
+
 ## 2. Select work
 
 ### 2.1 Fetch open issues and filter to dispatchable
@@ -251,6 +268,10 @@ if (-not $?) {
     & $gh issue edit $n --repo $repo --remove-label "in-progress"
     continue
 }
+
+# Write lock file so the next dispatcher run can detect a dead subagent.
+& "$repoRoot\infra\agent-ops\scripts\dispatch-lock-write.ps1" `
+    -IssueNumber $n -WorktreePath $worktreePath -Branch $branch
 ```
 
 ### 5.2 Spawn an implementing subagent
@@ -369,10 +390,11 @@ opening).
     --remove-label "in-progress"
 ```
 
-### 7.5 Clean up the worktree
+### 7.5 Clean up the worktree and release the lock
 
 ```powershell
 git -C $repoRoot worktree remove $worktreePath --force
+& "$repoRoot\infra\agent-ops\scripts\dispatch-lock-delete.ps1" -IssueNumber $n
 ```
 
 **Hard rules (per OPERATIONS.md §5):** never merge, never approve, never force-past a failing
@@ -443,12 +465,14 @@ Escalation format per OPERATIONS.md §5:
 [Dispatcher] Issue #N blocked — <one-line reason>. <URL>
 ```
 
-### 8.4 Clear `in-progress` and move on
+### 8.4 Clear `in-progress`, release lock, and move on
 
 ```powershell
 & $gh issue edit $n `
     --repo $repo `
     --remove-label "in-progress"
+
+& "$repoRoot\infra\agent-ops\scripts\dispatch-lock-delete.ps1" -IssueNumber $n
 ```
 
 Clean up the worktree and continue to the next issue in the ordered list.

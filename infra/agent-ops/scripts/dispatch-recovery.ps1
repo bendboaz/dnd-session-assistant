@@ -1,0 +1,109 @@
+# dispatch-recovery.ps1
+# Dead-agent recovery scan for the dispatcher loop.
+# Runs at the start of every dispatch session (DISPATCH.md ss1c).
+# Finds lock files left by interrupted subagent sessions and recovers their state:
+#   - Still alive  -> skip
+#   - Dead + commits on branch -> draft PR + needs-attention on PR and issue
+#   - Dead + no commits        -> unclaim issue (remove in-progress); silent re-dispatch
+# Either way: remove worktree and delete lock file.
+param(
+    [string]$StateDir = "D:\Users\Boaz\CodeProjects\dnd-session-assistant\.claude\agent-state",
+    [string]$Gh       = "C:\Program Files\GitHub CLI\gh.exe",
+    [string]$Slug     = "bendboaz/dnd-session-assistant",
+    [string]$RepoRoot = "D:\Users\Boaz\CodeProjects\dnd-session-assistant"
+)
+
+$ErrorActionPreference = 'Continue'
+
+function Test-SessionActive {
+    param([string]$SessionId)
+    if (-not $SessionId -or $SessionId -like 'unknown-*') { return $false }
+    $transcript = "C:\Users\Boaz\.claude\projects\D--Users-Boaz-CodeProjects\$SessionId.jsonl"
+    if (-not (Test-Path $transcript)) { return $false }
+    $age = (Get-Date) - (Get-Item $transcript).LastWriteTime
+    return $age.TotalMinutes -lt 15
+}
+
+$lockFiles = @(Get-ChildItem "$StateDir\dispatch-lock-*.json" -ErrorAction SilentlyContinue)
+if ($lockFiles.Count -eq 0) { return }
+
+Write-Host "[dispatch-recovery] Found $($lockFiles.Count) lock file(s); scanning for dead agents."
+
+foreach ($lf in $lockFiles) {
+    $lock = $null
+    try { $lock = Get-Content $lf.FullName -Raw | ConvertFrom-Json } catch {
+        Write-Warning "[dispatch-recovery] Cannot parse $($lf.Name); removing corrupt lock."
+        Remove-Item $lf.FullName -ErrorAction SilentlyContinue
+        continue
+    }
+
+    $n     = $lock.issueNumber
+    $age   = (Get-Date) - [datetime]$lock.startedAt
+    $alive = Test-SessionActive $lock.sessionId
+
+    if ($alive -and $age.TotalHours -lt 2) {
+        Write-Host "[dispatch-recovery] Issue #$n: session $($lock.sessionId) still active ($([int]$age.TotalMinutes)min); skipping."
+        continue
+    }
+
+    Write-Host "[dispatch-recovery] Issue #$n: dead agent (session=$($lock.sessionId), age=$([int]$age.TotalMinutes)min)"
+
+    # If a PR already exists for this branch, the agent may have finished; just clean the lock.
+    $existingPR = @(& $Gh pr list --repo $Slug --head $lock.branch --state open --json number | ConvertFrom-Json)
+    if ($existingPR.Count -gt 0) {
+        Write-Host "[dispatch-recovery] Issue #$n: PR #$($existingPR[0].number) already open; removing stale lock only."
+        Remove-Item $lf.FullName -ErrorAction SilentlyContinue
+        continue
+    }
+
+    # Check for commits on the orphaned branch.
+    $hasCommits = $false
+    $wt = $lock.worktreePath
+    if (Test-Path $wt) {
+        $commits = @(git -C $wt log "origin/main..HEAD" --oneline 2>$null | Where-Object { $_ })
+        $hasCommits = $commits.Count -gt 0
+    }
+
+    if ($hasCommits) {
+        Write-Host "[dispatch-recovery] Issue #$n: $($commits.Count) commit(s) found; salvaging as draft PR."
+
+        git -C $wt push origin $lock.branch 2>$null
+
+        $tmp = "$StateDir\cc-comment.txt"
+        @"
+🛠️ **[Implementing Agent]**
+
+Orphaned-branch recovery: the implementing subagent for issue #$n failed or was interrupted mid-run.
+$($commits.Count) commit(s) were found on this branch; opening as a draft PR for human review.
+
+**Action needed:** review the draft, continue or close, then clear ``needs-attention`` when done.
+"@ | Set-Content $tmp -Encoding utf8
+
+        $prUrl = & $Gh pr create --repo $Slug --head $lock.branch --base main --draft `
+            --title "[DRAFT] Issue #$n — orphaned by interrupted agent" `
+            --body-file $tmp
+        Remove-Item $tmp -ErrorAction SilentlyContinue
+
+        # Add needs-attention to both the PR and the issue.
+        $prNumber = ($prUrl -split '/')[-1]
+        if ($prNumber -match '^\d+$') {
+            & $Gh pr edit $prNumber --repo $Slug --add-label "needs-attention" 2>$null
+        }
+        & $Gh issue edit $n --repo $Slug --add-label "needs-attention"
+    } else {
+        # No commits: silently unclaim so the next dispatch run can re-dispatch.
+        Write-Host "[dispatch-recovery] Issue #$n: no commits; unclaiming for re-dispatch."
+        & $Gh issue edit $n --repo $Slug --remove-label "in-progress"
+    }
+
+    # Remove the worktree (branch stays on remote if it was pushed above).
+    if (Test-Path $wt) {
+        git -C $RepoRoot worktree remove $wt 2>$null
+        if (Test-Path $wt) {
+            Write-Warning "[dispatch-recovery] Issue #$n: worktree removal blocked (file lock?); manual cleanup needed: $wt"
+        }
+    }
+
+    Remove-Item $lf.FullName -ErrorAction SilentlyContinue
+    Write-Host "[dispatch-recovery] Issue #$n: recovery complete."
+}
