@@ -10,6 +10,8 @@ on:
       - 'vite.config.*'
       - 'tsconfig*.json'
       - 'index.html'
+      - 'CLAUDE.md'
+      - 'infra/agent-ops/**'
   workflow_dispatch:
     inputs:
       pr_number:
