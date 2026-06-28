@@ -100,15 +100,19 @@ jobs:
         run: |
           echo "$SA_KEY" > /tmp/sa-key.json
           trap "rm -f /tmp/sa-key.json" EXIT
+          # set +e so -eo pipefail doesn't kill the shell before we can inspect the
+          # exit code. Firebase returns 1 when the version is already live (no-op).
+          set +e
           GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json \
             npx firebase-tools deploy --project ${{ env.GCP_PROJECT_ID }} --only hosting \
             2>&1 | tee /tmp/fb-deploy.log
-          EXIT=${PIPESTATUS[0]}
-          if [ $EXIT -ne 0 ] && grep -q "is the current active version" /tmp/fb-deploy.log; then
+          FB_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ $FB_EXIT -ne 0 ] && grep -q "is the current active version" /tmp/fb-deploy.log; then
             echo "Hosting already at current version — no-op deploy."
             exit 0
           fi
-          exit $EXIT
+          exit $FB_EXIT
 
   smoke-test:
     runs-on: ubuntu-latest
