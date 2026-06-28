@@ -1,9 +1,8 @@
 name: Deploy
 
-# Manual trigger for now. Switch to `push: branches: [main]` (task #9) only AFTER a
-# successful manual deploy has proven the GCP wiring (Artifact Registry, secrets,
-# IAM, Firestore) end-to-end.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 env:
