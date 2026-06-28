@@ -96,6 +96,7 @@ jobs:
         # no-op success, not a real failure — treat it as such.
         env:
           SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        shell: bash
         run: |
           echo "$SA_KEY" > /tmp/sa-key.json
           trap "rm -f /tmp/sa-key.json" EXIT
@@ -103,7 +104,7 @@ jobs:
             npx firebase-tools deploy --project ${{ env.GCP_PROJECT_ID }} --only hosting \
             2>&1 | tee /tmp/fb-deploy.log
           EXIT=${PIPESTATUS[0]}
-          if grep -q "is the current active version" /tmp/fb-deploy.log; then
+          if [ $EXIT -ne 0 ] && grep -q "is the current active version" /tmp/fb-deploy.log; then
             echo "Hosting already at current version — no-op deploy."
             exit 0
           fi
