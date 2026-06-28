@@ -34,6 +34,27 @@ Review the diff for:
 Be concise and specific (file + line where useful). Group findings by severity.
 If everything looks good, say so briefly rather than inventing issues."""
 
+AGENT_OPS_CHECKLIST = """
+Additionally, this diff includes changes under `infra/agent-ops/`. Apply these extra checks:
+
+  (d) PowerShell correctness:
+      - No `&&` command chaining (PowerShell 5.1 does not support pipeline chain operators);
+        use `;` or `if ($?) { ... }` instead.
+      - No `2>&1` on native executables (in PowerShell 5.1 this wraps stderr lines as
+        ErrorRecord objects and can set `$?` to `$false` even when the exe succeeded).
+      - Multi-line `--body` arguments to `gh` must use `--body-file` with a temp file, not
+        inline here-strings or multi-line string literals passed on the command line.
+
+  (e) Label-ownership rules:
+      - Only the dispatcher script may write the `in-progress` label.
+      - Only a human (i.e. never a script) may write `ready`, `priority:*`, or `blocked` labels.
+      - FLAG any code that violates these ownership boundaries.
+
+  (f) Python correctness in `agent_token.py` (if changed):
+      - JWT signing: verify the correct algorithm and claims are used.
+      - `requests` usage: check for proper error handling (`.raise_for_status()` or explicit
+        status checks), timeouts, and that no credentials are logged."""
+
 THREAD_PREAMBLE = """The following is the prior PR review thread. Comments are prefixed with role
 headers: [Reviewing Agent] = previous automated AI review, [Implementing Agent] = automated
 Claude subagent implementing changes, [Human] = the PR author/reviewer.
@@ -46,6 +67,14 @@ that is still unresolved or new.
 """
 
 REVIEW_HEADER = "🔎 **[Reviewing Agent]** — automated AI review"
+
+
+def _touches_agent_ops(diff: str) -> bool:
+    """Return True if the diff includes any file under infra/agent-ops/."""
+    for line in diff.splitlines():
+        if line.startswith(("--- a/infra/agent-ops/", "+++ b/infra/agent-ops/")):
+            return True
+    return False
 
 
 def main() -> None:
@@ -75,16 +104,21 @@ def main() -> None:
         cap = diff.rfind("\n", 0, MAX_DIFF_CHARS)
         diff = diff[: cap if cap != -1 else MAX_DIFF_CHARS]
 
+    # Build the checklist, appending agent-ops section when relevant.
+    checklist = CHECKLIST
+    if _touches_agent_ops(diff):
+        checklist = checklist + AGENT_OPS_CHECKLIST
+
     # Build prompt: prepend the prior thread when present so the model can skip
     # already-resolved issues before reading the diff.
     if prior_thread:
         prompt = (
-            f"{CHECKLIST}\n\n"
+            f"{checklist}\n\n"
             f"{THREAD_PREAMBLE}{prior_thread}\n--- END OF PRIOR THREAD ---\n\n"
             f"Diff:\n```diff\n{diff}\n```"
         )
     else:
-        prompt = f"{CHECKLIST}\n\nDiff:\n```diff\n{diff}\n```"
+        prompt = f"{checklist}\n\nDiff:\n```diff\n{diff}\n```"
 
     client = Anthropic()
     msg = client.messages.create(
