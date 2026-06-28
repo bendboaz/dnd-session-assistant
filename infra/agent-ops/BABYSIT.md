@@ -21,14 +21,18 @@ and crash-safe (no long-held session polling CI).
 ## 1. Preconditions
 
 ```powershell
+# If launched by run-babysit.ps1, GH_TOKEN is already minted — go straight to the check:
+& "C:\Program Files\GitHub CLI\gh.exe" auth status   # must show dnd-agent[bot], not the human
+
+# If GH_TOKEN is NOT set (manual run), mint it now.
+# GH_APP_PRIVATE_KEY_PATH must be a Windows user-scope env var — do NOT set it here
+# (the .pem path triggers the sensitive-file hook; see OPERATIONS.md §1):
 $env:GH_APP_ID              = "4070567"
 $env:GH_APP_INSTALLATION_ID = "140736715"
-$env:GH_APP_PRIVATE_KEY_PATH = "<absolute path to the .pem, outside the repo>"
-$env:GH_TOKEN = (python infra/agent-ops/agent_token.py)
-& "C:\Program Files\GitHub CLI\gh.exe" auth status   # must show the App, not the human
+$env:GH_TOKEN = (python infra/agent-ops/agent_token.py)   # safe — no .pem in command
+& "C:\Program Files\GitHub CLI\gh.exe" auth status
 ```
-Token is short-lived (~10 min); re-mint if a run runs long. (When launched by `run-babysit.ps1`, the
-token is already minted and `GH_TOKEN` is set.)
+Token is short-lived (~10 min). Re-mint with `$env:GH_TOKEN = (python infra/agent-ops/agent_token.py)` if a run runs long.
 
 ---
 
@@ -125,7 +129,8 @@ skips the resolved finding. Then wait briefly for GitHub to propagate the commen
 
 ```powershell
 # Post the reply first (before push — see §5)
-$tmp = [System.IO.Path]::GetTempFileName() + ".md"
+# Use a fixed no-space temp path; if Remove-Item is blocked by a guardrail, leave the file
+$tmp = "$env:TEMP\cc-comment.txt"
 @"
 🛠️ **[Implementing Agent]**
 
@@ -199,9 +204,17 @@ what's blocked + a `PushNotification` — then **stop on this PR** and move on. 
 
 ```powershell
 & $gh pr edit $n --repo $slug --add-label "needs-attention"
-$body = "🛠️ **[Implementing Agent]**`n`nEscalating — human attention required.`n`n**Reason:** <...>`n`n<what's blocked / what you tried>"
-$tmp = [System.IO.Path]::GetTempFileName(); [System.IO.File]::WriteAllText($tmp, $body)
-& $gh pr comment $n --repo $slug --body-file $tmp; Remove-Item $tmp
+# Use a fixed no-space temp path; if Remove-Item is blocked by a guardrail, leave the file
+$tmp = "$env:TEMP\cc-comment.txt"
+@"
+🛠️ **[Implementing Agent]**
+
+Escalating — human attention required.
+
+**Reason:** <fill in what's blocked and what you tried>
+"@ | Set-Content -Path $tmp -Encoding utf8
+& $gh pr comment $n --repo $slug --body-file $tmp
+Remove-Item $tmp -ErrorAction SilentlyContinue
 # then send a PushNotification with a one-line summary + the PR URL
 ```
 
