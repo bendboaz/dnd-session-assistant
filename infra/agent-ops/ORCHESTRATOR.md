@@ -14,6 +14,12 @@ deny-hook; see OPERATIONS.md §3 rule 6).
 - **Run the loops on demand** + own the schedules. **Never merges** (the human merges); never bypasses
   the App-identity / branch-protection guards.
 
+## Hard limits — never do these autonomously
+- **Never apply the `ready` label to any issue.** `ready` means "approved for the auto-dispatcher to
+  build" and is the human's decision exclusively. When proposing a new issue or promoting a nit cluster
+  to a work item, create the issue with `enhancement` (and `priority: *` as appropriate) and **stop
+  there**. Surface it to the human and let them add `ready` if they agree it's dispatchable.
+
 ## The loops at a glance
 | Loop | Wrapper (`.claude/`) | Cadence | Writes |
 |---|---|---|---|
@@ -74,7 +80,8 @@ loop's self-report — **verify against GitHub + git state**. (`$gh = "C:\Progra
 
 8b. **Review-nit ledger.** Scan the `🧹 Review nit ledger` issue (the babysitter logs merge-ready PRs'
    leftover Low nits there, BABYSIT.md §7). A nit recurring across several PRs is a systemic signal →
-   promote it to a `ready` cleanup issue (or fix the convention). Otherwise it's batch-cleanup-when-idle.
+   propose a cleanup issue (label `enhancement`/`priority: low`) and surface it to the human — **do not
+   apply `ready`** (see Hard limits above). The human decides if it's worth dispatching.
 
 9. **Schedules.** `schtasks /Query /TN "dnd-agent-*" /V /FO LIST` — tasks present, `Status: Ready`,
    sane `Next Run Time`, and `Last Result` 0. A non-zero last result → read that run's wrapper output.
