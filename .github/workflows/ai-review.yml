@@ -1,4 +1,4 @@
-name: AI Review
+﻿name: AI Review
 
 on:
   pull_request:
@@ -10,8 +10,12 @@ on:
       - 'vite.config.*'
       - 'tsconfig*.json'
       - 'index.html'
-      - '.github/workflows/**'
-      - '.github/scripts/**'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -29,24 +33,58 @@ jobs:
           python-version: '3.12'
       - run: pip install anthropic
 
+      - name: Check for update-branch merge
+        id: skip_check
+        run: |
+          COMMIT_MSG=$(git log -1 --format="%s")
+          if echo "$COMMIT_MSG" | grep -qE "^Merge (branch 'main'|pull request)"; then
+            echo "Skipping AI review: update-branch merge commit detected."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve PR number
+        id: pr
+        if: steps.skip_check.outputs.skip != 'true'
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Diff against base
-        run: git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
+        if: steps.skip_check.outputs.skip != 'true'
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BASE=$(gh pr view "${{ steps.pr.outputs.number }}" --json baseRefName --jq .baseRefName)
+            git fetch origin "$BASE"
+            git diff "origin/$BASE...HEAD" > pr.diff
+          else
+            git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fetch existing PR comment thread
+        if: steps.skip_check.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr view "${{ github.event.pull_request.number }}" \
+          gh pr view "${{ steps.pr.outputs.number }}" \
             --json comments \
             --jq '.comments[] | "----\n" + .body' \
             > pr_comments.txt || true
 
       - name: Generate AI review
+        if: steps.skip_check.outputs.skip != 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python .github/scripts/ai_review.py pr.diff pr_comments.txt > review.md
 
       - name: Post review comment
+        if: steps.skip_check.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr comment "${{ github.event.pull_request.number }}" --body-file review.md
+        run: gh pr comment "${{ steps.pr.outputs.number }}" --body-file review.md
