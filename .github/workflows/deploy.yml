@@ -91,13 +91,24 @@ jobs:
         # Write GCP_SA_KEY directly so firebase-tools picks up the raw SA JSON via
         # GOOGLE_APPLICATION_CREDENTIALS (the auth action's credential file format is
         # gcloud-specific and not always recognised by firebase-tools).
+        # Firebase returns HTTP 400 "is the current active version" when the build output
+        # is byte-for-byte identical to what's already live (same content hash). That is a
+        # no-op success, not a real failure — treat it as such.
         env:
           SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        shell: bash
         run: |
           echo "$SA_KEY" > /tmp/sa-key.json
           trap "rm -f /tmp/sa-key.json" EXIT
           GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json \
-            npx firebase-tools deploy --project ${{ env.GCP_PROJECT_ID }} --only hosting
+            npx firebase-tools deploy --project ${{ env.GCP_PROJECT_ID }} --only hosting \
+            2>&1 | tee /tmp/fb-deploy.log
+          EXIT=${PIPESTATUS[0]}
+          if [ $EXIT -ne 0 ] && grep -q "is the current active version" /tmp/fb-deploy.log; then
+            echo "Hosting already at current version — no-op deploy."
+            exit 0
+          fi
+          exit $EXIT
 
   smoke-test:
     runs-on: ubuntu-latest
