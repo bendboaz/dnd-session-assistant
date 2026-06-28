@@ -54,9 +54,14 @@ loop's self-report — **verify against GitHub + git state**. (`$gh = "C:\Progra
    escalation — verify it escalated rather than silently looping). **`ai-review` check = pass means the
    workflow ran, NOT that the review found nothing — always read the comment.**
 
-4. **Off-limits edits.** No agent PR diff may touch `infra/agent-ops/**`, `.github/workflows/**`, or a
-   contract file (OPERATIONS.md §7). Spot-check: `gh pr diff N --name-only`. The deny-hook should
-   prevent these — a hit means a guard was bypassed; investigate.
+4. **Off-limits edits.** No `claude/agent/issue-*` PR diff may touch `infra/agent-ops/**`,
+   `.github/workflows/**`, or a contract file (OPERATIONS.md §7). Spot-check: `gh pr diff N
+   --name-only` on agent-branch PRs only. The deny-hook blocks these when `AGENT_LOOP=1`.
+   **Exception — supervised sessions:** PRs opened under direct human supervision (no `AGENT_LOOP`,
+   branch not named `claude/agent/issue-*`) for issues explicitly tasked with CI or agent-ops work
+   are expected to touch those paths. Confirm the branch name and issue intent; if both match, it is
+   not a violation — note it and move on. A hit on a true `claude/agent/issue-*` branch means the
+   deny-hook was bypassed; investigate.
 
 5. **Stuck / failing PRs.** Open agent PRs with a required check (`frontend`/`backend`) failing across
    multiple rounds, or `needs-attention` set, are the human's queue → surface them. Confirm the
