@@ -4,6 +4,24 @@ A mobile-first PWA that listens to a D&D table (Hebrew speech, English game term
 spells/monsters/items/conditions, and shows their stat blocks. See **`docs/DESIGN.md`** for the full
 design. The actionable backlog lives in **GitHub Issues**.
 
+## Role identification — read this first
+
+Before taking any action, determine which role this session is playing. The repo runs three
+autonomous loops plus an interactive orchestrator; each has a different scope and restrictions.
+
+| Signal | Role | First thing to read |
+|---|---|---|
+| `$env:AGENT_LOOP -eq '1'`, invoked by `run-dispatch.ps1` | **Dispatcher agent** | `infra/agent-ops/DISPATCH.md` |
+| `$env:AGENT_LOOP -eq '1'`, invoked by `run-babysit.ps1` | **Babysitter agent** | `infra/agent-ops/BABYSIT.md` |
+| `$env:AGENT_LOOP -eq '1'`, invoked by `run-triage.ps1` | **Triage agent** | `infra/agent-ops/TRIAGE.md` |
+| Interactive session, task brief says "orchestrator" or "healthcheck" | **Orchestrator** | `infra/agent-ops/ORCHESTRATOR.md` |
+| None of the above | **Ad-hoc interactive** | This file only |
+
+**If your role isn't clear from the task brief or environment, ask before doing anything.** An
+unspecified interactive session is not automatically the orchestrator. Do not touch
+`infra/agent-ops/**` or `.github/workflows/**` unless you are confirmed as the orchestrator or the
+human has explicitly directed the edit in this session.
+
 ## Platform (Windows)
 
 This machine runs **Windows 10**. Use the **PowerShell tool** for shell commands (not Bash, unless
