@@ -18,21 +18,61 @@ and crash-safe (no long-held session polling CI).
 
 ---
 
-## 1. Preconditions
+## 1. Preflight
+
+Run before any PR work begins. Hard-fail items (`exit 1`) abort the run; warnings continue with
+reduced capability.
 
 ```powershell
-# If launched by run-babysit.ps1, GH_TOKEN is already minted — go straight to the check:
-& "C:\Program Files\GitHub CLI\gh.exe" auth status   # must show dnd-agent[bot], not the human
+$gh   = "C:\Program Files\GitHub CLI\gh.exe"
+$slug = "bendboaz/dnd-session-assistant"
 
-# If GH_TOKEN is NOT set (manual run), mint it now.
-# GH_APP_PRIVATE_KEY_PATH must be a Windows user-scope env var — do NOT set it here
-# (the .pem path triggers the sensitive-file hook; see OPERATIONS.md §1):
-$env:GH_APP_ID              = "4070567"
-$env:GH_APP_INSTALLATION_ID = "140736715"
-$env:GH_TOKEN = (python infra/agent-ops/agent_token.py)   # safe — no .pem in command
-& "C:\Program Files\GitHub CLI\gh.exe" auth status
+# 1. Token — wrapper pre-mints GH_TOKEN; only mint here on a manual run
+if ($env:GH_TOKEN -notlike 'ghs_*') {
+    # GH_APP_PRIVATE_KEY_PATH must be a Windows user-scope env var — do NOT set it here
+    # (.pem extension triggers the sensitive-file hook; see OPERATIONS.md §1)
+    $env:GH_APP_ID              = "4070567"
+    $env:GH_APP_INSTALLATION_ID = "140736715"
+    $env:GH_TOKEN = (python infra/agent-ops/agent_token.py)   # safe — no .pem in command
+}
+if ($env:GH_TOKEN -notlike 'ghs_*') {
+    Write-Error "PREFLIGHT FAIL: GH_TOKEN missing or malformed (expected ghs_*). Aborting."; exit 1
+}
+
+# 2. Auth identity — must be dnd-agent[bot], never the human account
+$authOut = (& $gh auth status 2>&1) -join "`n"
+if ($authOut -notmatch 'dnd-agent\[bot\]') {
+    Write-Error "PREFLIGHT FAIL: gh auth does not show dnd-agent[bot].`n$authOut"; exit 1
+}
+
+# 3. gh CLI reachable
+if (-not (Test-Path $gh)) {
+    Write-Error "PREFLIGHT FAIL: gh CLI not found at $gh"; exit 1
+}
+
+# 4. Python on PATH for re-minting (token is short-lived; long runs need a refresh)
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Warning "PREFLIGHT WARN: python not on PATH; re-minting unavailable if token expires mid-run."
+}
+
+# 5. agent_token.py present for re-minting
+if (-not (Test-Path "infra/agent-ops/agent_token.py")) {
+    Write-Warning "PREFLIGHT WARN: infra/agent-ops/agent_token.py not found; re-minting unavailable."
+}
+
+# 6. Prune stale worktrees before adding new ones (OPERATIONS.md §9)
+if (Test-Path "infra/agent-ops/cleanup.ps1") {
+    & "infra/agent-ops/cleanup.ps1"
+} else {
+    Write-Warning "PREFLIGHT WARN: cleanup.ps1 not found; stale worktrees may interfere with setup."
+}
+
+# 7. Ensure worktree base dir exists (babysitter creates per-PR worktrees under it)
+$wtBase = "D:\Users\Boaz\CodeProjects\dnd-wt"
+if (-not (Test-Path $wtBase)) { New-Item -ItemType Directory -Force -Path $wtBase | Out-Null }
 ```
-Token is short-lived (~10 min). Re-mint with `$env:GH_TOKEN = (python infra/agent-ops/agent_token.py)` if a run runs long.
+
+Token is short-lived (~10 min). Re-mint mid-run: `$env:GH_TOKEN = (python infra/agent-ops/agent_token.py)`.
 
 ---
 

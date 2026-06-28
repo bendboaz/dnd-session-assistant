@@ -31,28 +31,61 @@ session (cloud routine deferred; see OPERATIONS.md §6). Date is supplied to eac
 
 ---
 
-## 1. Preconditions
+## 1. Preflight
 
-1. `GH_TOKEN` must be set to a short-lived GitHub App installation token for `dnd-agent`
-   (App ID `4070567`, Installation ID `140736715`). See OPERATIONS.md §1 for the full identity
-   and KEY-ENV CONSTRAINT. The token grants read-mostly access plus issue-write for the report.
+Run before any issue work begins. Hard-fail items (`exit 1`) abort the run; warnings continue with
+reduced capability.
 
-2. Local (PowerShell) — **if launched by `run-triage.ps1`**, `GH_TOKEN` is already minted; go
-   straight to the `auth status` check. If not (manual run), `GH_APP_PRIVATE_KEY_PATH` must be a
-   **Windows user-scope env var** (System Properties → Environment Variables) — do NOT set it here;
-   the `.pem` path triggers the sensitive-file hook (see OPERATIONS.md §1):
-   ```powershell
-   $env:GH_APP_ID = "4070567"
-   $env:GH_APP_INSTALLATION_ID = "140736715"
-   # GH_APP_PRIVATE_KEY_PATH inherited from user-scope env — do NOT set it here
-   $env:GH_TOKEN = (python infra/agent-ops/agent_token.py)   # safe — no .pem in command
-   & "C:\Program Files\GitHub CLI\gh.exe" auth status   # must show dnd-agent[bot], not the human
-   ```
+```powershell
+$gh   = "C:\Program Files\GitHub CLI\gh.exe"
+$repo = "bendboaz/dnd-session-assistant"
 
-3. Cloud (GitHub Actions): token is minted by `actions/create-github-app-token` and passed as
-   `GH_TOKEN`. See OPERATIONS.md §1 (CI subsection).
+# 1. Token — wrapper pre-mints GH_TOKEN; only mint here on a manual run
+if ($env:GH_TOKEN -notlike 'ghs_*') {
+    # GH_APP_PRIVATE_KEY_PATH must be a Windows user-scope env var — do NOT set it here
+    # (.pem extension triggers the sensitive-file hook; see OPERATIONS.md §1)
+    $env:GH_APP_ID              = "4070567"
+    $env:GH_APP_INSTALLATION_ID = "140736715"
+    $env:GH_TOKEN = (python infra/agent-ops/agent_token.py)   # safe — no .pem in command
+}
+if ($env:GH_TOKEN -notlike 'ghs_*') {
+    Write-Error "PREFLIGHT FAIL: GH_TOKEN missing or malformed (expected ghs_*). Aborting."; exit 1
+}
 
-4. The token is short-lived (~10 min). Re-mint if a long run might exceed that window.
+# 2. Auth identity — must be dnd-agent[bot], never the human account
+$authOut = (& $gh auth status 2>&1) -join "`n"
+if ($authOut -notmatch 'dnd-agent\[bot\]') {
+    Write-Error "PREFLIGHT FAIL: gh auth does not show dnd-agent[bot].`n$authOut"; exit 1
+}
+
+# 3. gh CLI reachable
+if (-not (Test-Path $gh)) {
+    Write-Error "PREFLIGHT FAIL: gh CLI not found at $gh"; exit 1
+}
+
+# 4. Confirm working directory is the repo root
+if (-not (Test-Path "infra/agent-ops/TRIAGE.md")) {
+    Write-Error "PREFLIGHT FAIL: not at repo root (infra/agent-ops/TRIAGE.md not found)."; exit 1
+}
+
+# 5. Python on PATH for re-minting (token is short-lived; long runs may need a refresh)
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Warning "PREFLIGHT WARN: python not on PATH; re-minting unavailable if token expires mid-run."
+}
+
+# 6. agent_token.py present for re-minting
+if (-not (Test-Path "infra/agent-ops/agent_token.py")) {
+    Write-Warning "PREFLIGHT WARN: infra/agent-ops/agent_token.py not found; re-minting unavailable."
+}
+
+# 7. Set triage date from system clock — never invent or hard-code a date
+$triageDate = Get-Date -Format 'yyyy-MM-dd'
+Write-Host "Triage date: $triageDate"
+```
+
+Token is short-lived (~10 min). Re-mint if the run is long: `$env:GH_TOKEN = (python infra/agent-ops/agent_token.py)`.
+
+**Cloud (GitHub Actions):** token is minted by `actions/create-github-app-token` and passed as `GH_TOKEN`. See OPERATIONS.md §1 (CI subsection).
 
 ---
 
