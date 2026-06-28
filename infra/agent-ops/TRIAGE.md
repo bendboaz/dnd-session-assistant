@@ -37,13 +37,16 @@ session (cloud routine deferred; see OPERATIONS.md §6). Date is supplied to eac
    (App ID `4070567`, Installation ID `140736715`). See OPERATIONS.md §1 for the full identity
    and KEY-ENV CONSTRAINT. The token grants read-mostly access plus issue-write for the report.
 
-2. Local (PowerShell):
+2. Local (PowerShell) — **if launched by `run-triage.ps1`**, `GH_TOKEN` is already minted; go
+   straight to the `auth status` check. If not (manual run), `GH_APP_PRIVATE_KEY_PATH` must be a
+   **Windows user-scope env var** (System Properties → Environment Variables) — do NOT set it here;
+   the `.pem` path triggers the sensitive-file hook (see OPERATIONS.md §1):
    ```powershell
    $env:GH_APP_ID = "4070567"
    $env:GH_APP_INSTALLATION_ID = "140736715"
-   $env:GH_APP_PRIVATE_KEY_PATH = "<path to the .pem, outside the repo>"
-   $env:GH_TOKEN = (python infra/agent-ops/agent_token.py)
-   & "C:\Program Files\GitHub CLI\gh.exe" auth status   # must show the App, not the human
+   # GH_APP_PRIVATE_KEY_PATH inherited from user-scope env — do NOT set it here
+   $env:GH_TOKEN = (python infra/agent-ops/agent_token.py)   # safe — no .pem in command
+   & "C:\Program Files\GitHub CLI\gh.exe" auth status   # must show dnd-agent[bot], not the human
    ```
 
 3. Cloud (GitHub Actions): token is minted by `actions/create-github-app-token` and passed as
