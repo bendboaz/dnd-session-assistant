@@ -116,8 +116,7 @@ export function TopBar({
           role="dialog"
           aria-modal="true"
           aria-labelledby="end-session-dialog-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-6"
-          style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
           // Backdrop click dismisses without ending the session.
           onClick={() => setConfirming(false)}
         >
