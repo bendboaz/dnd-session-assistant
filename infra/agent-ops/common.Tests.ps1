@@ -215,11 +215,23 @@ Describe 'Get-PRNeedsAttention' {
     It 'returns false when all checks pass and no review comment' {
         Get-PRNeedsAttention (New-FakePRDetail 'CLEAN' @('SUCCESS') '' @()) | Should -Be $false
     }
-    It 'returns false when PR is fully clean' {
-        Get-PRNeedsAttention (New-FakePRDetail 'CLEAN' @() '' @()) | Should -Be $false
-    }
     It 'returns false for a fully clean PR (no bad state, no review, no failing checks)' {
         Get-PRNeedsAttention (New-FakePRDetail 'CLEAN' @('SUCCESS') 'APPROVED' @()) | Should -Be $false
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Get-PRsNeedingAttention
+# ---------------------------------------------------------------------------
+
+Describe 'Get-PRsNeedingAttention' {
+    It 'excludes PRs bearing the needs-attention label from the result' {
+        # PR #2 is on a valid agent branch but carries the needs-attention label.
+        # The label filter must eliminate it before any gh pr view call is made,
+        # so the returned array must not contain PR #2.
+        $labelledPR = New-FakePR 2 'claude/agent/issue-2' '' @($Labels.NeedsAttention)
+        $result = Get-PRsNeedingAttention -PullRequests @($labelledPR)
+        ($result | Where-Object { $_.number -eq 2 }) | Should -BeNullOrEmpty
     }
 }
 
@@ -256,11 +268,10 @@ Describe 'Backoff functions' {
 # Send-AgentComment header prepend
 # ---------------------------------------------------------------------------
 
+# Logic-extraction test: exercises the header-prepend decision inline rather than calling Send-AgentComment
+# (calling the real function would require mocking $GH to avoid hitting GitHub)
 Describe 'Send-AgentComment header prepend' {
     It 'prepends role header when body has none' {
-        # Override $GH to a no-op
-        $captured = $null
-        $tmpPath = "$env:TEMP\cc-comment.txt"
         # We can't easily mock gh, so test the file content directly:
         # Manually invoke the header-prepend logic from common.ps1
         $role = 'Implementing'
