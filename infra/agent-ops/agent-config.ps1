@@ -29,9 +29,9 @@ $RoleHeaders = @{
 }
 
 $Labels = @{
-    Ready          = "ready"
+    Ready          = "ready"    # READ-ONLY: set by humans only — never add this label from a script
     InProgress     = "in-progress"
-    Blocked        = "blocked"
+    Blocked        = "blocked"  # READ-ONLY: set by humans only — never add this label from a script
     NeedsAttention = "needs-attention"
     HelpWanted     = "help wanted"
     Meta           = "meta"

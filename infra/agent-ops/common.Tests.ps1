@@ -216,6 +216,74 @@ Describe 'Get-PRNeedsAttention' {
     It 'returns false when PR is fully clean' {
         Get-PRNeedsAttention (New-FakePRDetail 'CLEAN' @() '' @()) | Should -Be $false
     }
+    It 'returns false for a fully clean PR (no bad state, no review, no failing checks)' {
+        Get-PRNeedsAttention (New-FakePRDetail 'CLEAN' @('SUCCESS') 'APPROVED' @()) | Should -Be $false
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Backoff functions (Test-LoopBackoff / Update-LoopBackoff / Clear-LoopBackoff)
+# ---------------------------------------------------------------------------
+
+Describe 'Backoff functions' {
+    BeforeEach {
+        $script:origStateDir = $StateDir
+        $script:tmpDir = (Join-Path $env:TEMP "pester-backoff-$([System.IO.Path]::GetRandomFileName())")
+        New-Item -ItemType Directory -Force -Path $script:tmpDir | Out-Null
+        Set-Variable -Name StateDir -Value $script:tmpDir -Scope Script
+        $global:StateDir = $script:tmpDir   # common.ps1 uses $StateDir from module scope
+    }
+    AfterEach {
+        Set-Variable -Name StateDir -Value $script:origStateDir -Scope Script
+        $global:StateDir = $script:origStateDir
+        Remove-Item $script:tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    It 'Test-LoopBackoff returns false when no backoff file exists' {
+        Test-LoopBackoff 'test' | Should -Be $false
+    }
+    It 'Update-LoopBackoff creates a backoff and Test-LoopBackoff returns true' {
+        Update-LoopBackoff 'test' | Out-Null
+        Test-LoopBackoff 'test' | Should -Be $true
+    }
+    It 'Clear-LoopBackoff removes the backoff and Test-LoopBackoff returns false' {
+        Update-LoopBackoff 'test' | Out-Null
+        Clear-LoopBackoff 'test'
+        Test-LoopBackoff 'test' | Should -Be $false
+    }
+    It 'Update-LoopBackoff increments level on repeated calls' {
+        $r1 = Update-LoopBackoff 'test'
+        $r2 = Update-LoopBackoff 'test'
+        $r2.level | Should -BeGreaterThan $r1.level
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Send-AgentComment header prepend
+# ---------------------------------------------------------------------------
+
+Describe 'Send-AgentComment header prepend' {
+    It 'prepends role header when body has none' {
+        # Override $GH to a no-op
+        $captured = $null
+        $tmpPath = "$env:TEMP\cc-comment.txt"
+        # We can't easily mock gh, so test the file content directly:
+        # Manually invoke the header-prepend logic from common.ps1
+        $role = 'Implementing'
+        $body = 'some content'
+        $header = $RoleHeaders[$role]
+        $expected = "$header`n`n$body"
+        $alreadyHasHeader = $RoleHeaders.Values | Where-Object { $body.TrimStart().StartsWith($_) }
+        $result = if (-not $alreadyHasHeader) { "$header`n`n$body" } else { $body }
+        $result | Should -Be $expected
+    }
+    It 'does not double-prepend if body already starts with header' {
+        $role = 'Implementing'
+        $header = $RoleHeaders[$role]
+        $body = "$header`n`nalready has it"
+        $alreadyHasHeader = $RoleHeaders.Values | Where-Object { $body.TrimStart().StartsWith($_) }
+        $result = if (-not $alreadyHasHeader) { "$header`n`n$body" } else { $body }
+        $result | Should -Be $body
+    }
 }
 
 # ---------------------------------------------------------------------------

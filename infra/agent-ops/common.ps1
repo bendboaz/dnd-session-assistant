@@ -29,7 +29,7 @@ function Initialize-AgentAuth {
         Write-Warning "Token mint failed (got '$($env:GH_TOKEN)'). Ensure GH_APP_PRIVATE_KEY_PATH is set in user-scope env."
         return $false
     }
-    $authOut = (& $GH auth status 2>&1) -join ' '
+    $authOut = (& $GH auth status 2>&1 | ForEach-Object { "$_" }) -join ' '
     if ($authOut -notmatch 'dnd-agent\[bot\]') {
         Write-Warning "gh auth does not show dnd-agent[bot]: $authOut"
     } else {
@@ -413,6 +413,7 @@ function Test-LoopBackoff {
     } catch { return $false }
 }
 
+# Called by .claude/run-dispatch.ps1 and .claude/run-babysit.ps1 (gitignored wrappers).
 function Get-LoopBackoffInfo {
     param([string]$Loop)
     $backoffFile = (Join-Path $StateDir "$Loop.backoff")
