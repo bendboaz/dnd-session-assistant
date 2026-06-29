@@ -52,15 +52,15 @@ if ($env:GH_TOKEN -notlike 'ghs_*') {
     Write-Error "PREFLIGHT FAIL: GH_TOKEN missing or malformed (expected ghs_*). Aborting."; exit 1
 }
 
-# 2. Auth identity — must be dnd-agent[bot], never the human account
-$authOut = (& $gh auth status 2>&1) -join "`n"
-if ($authOut -notmatch 'dnd-agent\[bot\]') {
-    Write-Error "PREFLIGHT FAIL: gh auth does not show dnd-agent[bot].`n$authOut"; exit 1
-}
-
-# 3. gh CLI reachable
+# 2. gh CLI reachable — check before invoking gh
 if (-not (Test-Path $gh)) {
     Write-Error "PREFLIGHT FAIL: gh CLI not found at $gh"; exit 1
+}
+
+# 3. Auth identity — must be dnd-agent[bot], never the human account
+$authOut = (& $gh auth status) 2>$null | Out-String
+if ($authOut -notmatch 'dnd-agent\[bot\]') {
+    Write-Error "PREFLIGHT FAIL: gh auth does not show dnd-agent[bot].`n$authOut"; exit 1
 }
 
 # 4. Confirm working directory is the repo root

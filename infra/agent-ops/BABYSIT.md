@@ -39,15 +39,15 @@ if ($env:GH_TOKEN -notlike 'ghs_*') {
     Write-Error "PREFLIGHT FAIL: GH_TOKEN missing or malformed (expected ghs_*). Aborting."; exit 1
 }
 
-# 2. Auth identity — must be dnd-agent[bot], never the human account
-$authOut = (& $gh auth status 2>&1) -join "`n"
-if ($authOut -notmatch 'dnd-agent\[bot\]') {
-    Write-Error "PREFLIGHT FAIL: gh auth does not show dnd-agent[bot].`n$authOut"; exit 1
-}
-
-# 3. gh CLI reachable
+# 2. gh CLI reachable — check before invoking gh
 if (-not (Test-Path $gh)) {
     Write-Error "PREFLIGHT FAIL: gh CLI not found at $gh"; exit 1
+}
+
+# 3. Auth identity — must be dnd-agent[bot], never the human account
+$authOut = (& $gh auth status) 2>$null | Out-String
+if ($authOut -notmatch 'dnd-agent\[bot\]') {
+    Write-Error "PREFLIGHT FAIL: gh auth does not show dnd-agent[bot].`n$authOut"; exit 1
 }
 
 # 4. Python on PATH for re-minting (token is short-lived; long runs need a refresh)
@@ -170,7 +170,7 @@ skips the resolved finding. Then wait briefly for GitHub to propagate the commen
 ```powershell
 # Post the reply first (before push — see §5)
 # Use a fixed no-space temp path; if Remove-Item is blocked by a guardrail, leave the file
-$tmp = "$env:TEMP\cc-comment.txt"
+$tmp = "$env:TEMP\cc-reply.txt"
 @"
 🛠️ **[Implementing Agent]**
 
@@ -245,7 +245,7 @@ what's blocked + a `PushNotification` — then **stop on this PR** and move on. 
 ```powershell
 & $gh pr edit $n --repo $slug --add-label "needs-attention"
 # Use a fixed no-space temp path; if Remove-Item is blocked by a guardrail, leave the file
-$tmp = "$env:TEMP\cc-comment.txt"
+$tmp = "$env:TEMP\cc-escalate.txt"
 @"
 🛠️ **[Implementing Agent]**
 
