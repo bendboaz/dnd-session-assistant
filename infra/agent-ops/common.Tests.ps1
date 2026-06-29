@@ -6,6 +6,8 @@
 
 BeforeAll {
     . (Join-Path $PSScriptRoot 'common.ps1')
+    # $StateDir (.claude/agent-state) is gitignored and won't exist on CI runners.
+    if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Force -Path $StateDir | Out-Null }
 
     # Fixture helpers — defined in BeforeAll so they are available to all It blocks.
     function New-FakeIssue([int]$Number, [string[]]$Labels, [string]$Body = '') {
@@ -226,33 +228,26 @@ Describe 'Get-PRNeedsAttention' {
 # ---------------------------------------------------------------------------
 
 Describe 'Backoff functions' {
-    BeforeEach {
-        $script:origStateDir = $StateDir
-        $script:tmpDir = (Join-Path $env:TEMP "pester-backoff-$([System.IO.Path]::GetRandomFileName())")
-        New-Item -ItemType Directory -Force -Path $script:tmpDir | Out-Null
-        Set-Variable -Name StateDir -Value $script:tmpDir -Scope Script
-        $global:StateDir = $script:tmpDir   # common.ps1 uses $StateDir from module scope
-    }
+    # Uses the real $StateDir (created above if missing). AfterEach cleans up the
+    # test's backoff file so each It block starts with no pre-existing state.
     AfterEach {
-        Set-Variable -Name StateDir -Value $script:origStateDir -Scope Script
-        $global:StateDir = $script:origStateDir
-        Remove-Item $script:tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $StateDir 'pester-test.backoff') -ErrorAction SilentlyContinue
     }
     It 'Test-LoopBackoff returns false when no backoff file exists' {
-        Test-LoopBackoff 'test' | Should -Be $false
+        Test-LoopBackoff 'pester-test' | Should -Be $false
     }
     It 'Update-LoopBackoff creates a backoff and Test-LoopBackoff returns true' {
-        Update-LoopBackoff 'test' | Out-Null
-        Test-LoopBackoff 'test' | Should -Be $true
+        Update-LoopBackoff 'pester-test' | Out-Null
+        Test-LoopBackoff 'pester-test' | Should -Be $true
     }
     It 'Clear-LoopBackoff removes the backoff and Test-LoopBackoff returns false' {
-        Update-LoopBackoff 'test' | Out-Null
-        Clear-LoopBackoff 'test'
-        Test-LoopBackoff 'test' | Should -Be $false
+        Update-LoopBackoff 'pester-test' | Out-Null
+        Clear-LoopBackoff 'pester-test'
+        Test-LoopBackoff 'pester-test' | Should -Be $false
     }
     It 'Update-LoopBackoff increments level on repeated calls' {
-        $r1 = Update-LoopBackoff 'test'
-        $r2 = Update-LoopBackoff 'test'
+        $r1 = Update-LoopBackoff 'pester-test'
+        $r2 = Update-LoopBackoff 'pester-test'
         $r2.level | Should -BeGreaterThan $r1.level
     }
 }
