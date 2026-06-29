@@ -89,3 +89,19 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt pytest
       - run: pytest
+  
+  agent-tools-ps:
+  # Pester unit tests for the shared agent-ops PowerShell helpers (common.ps1).
+  # Pure-logic functions accept injected fixtures, so they run cross-platform on pwsh.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/agent-ops
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester
+        shell: pwsh
+        run: Install-Module Pester -MinimumVersion 5.5.0 -Force -Scope CurrentUser
+      - name: Run Pester
+        shell: pwsh
+        run: Invoke-Pester -CI -Path .
