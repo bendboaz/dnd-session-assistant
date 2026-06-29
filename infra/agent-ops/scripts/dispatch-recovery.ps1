@@ -7,10 +7,11 @@
 #   - Dead + no commits        -> unclaim issue (remove in-progress); silent re-dispatch
 # Either way: remove worktree and delete lock file.
 param(
-    [string]$StateDir = "D:\Users\Boaz\CodeProjects\dnd-session-assistant\.claude\agent-state",
-    [string]$Gh       = "C:\Program Files\GitHub CLI\gh.exe",
-    [string]$Slug     = "bendboaz/dnd-session-assistant",
-    [string]$RepoRoot = "D:\Users\Boaz\CodeProjects\dnd-session-assistant"
+    [string]$StateDir      = "D:\Users\Boaz\CodeProjects\dnd-session-assistant\.claude\agent-state",
+    [string]$Gh            = "C:\Program Files\GitHub CLI\gh.exe",
+    [string]$Slug          = "bendboaz/dnd-session-assistant",
+    [string]$RepoRoot      = "D:\Users\Boaz\CodeProjects\dnd-session-assistant",
+    [string]$TranscriptDir = "C:\Users\Boaz\.claude\projects\D--Users-Boaz-CodeProjects"
 )
 
 $ErrorActionPreference = 'Continue'
@@ -18,7 +19,7 @@ $ErrorActionPreference = 'Continue'
 function Test-SessionActive {
     param([string]$SessionId)
     if (-not $SessionId -or $SessionId -like 'unknown-*') { return $false }
-    $transcript = "C:\Users\Boaz\.claude\projects\D--Users-Boaz-CodeProjects\$SessionId.jsonl"
+    $transcript = "$TranscriptDir\$SessionId.jsonl"
     if (-not (Test-Path $transcript)) { return $false }
     $age = (Get-Date) - (Get-Item $transcript).LastWriteTime
     return $age.TotalMinutes -lt 15
@@ -50,6 +51,12 @@ foreach ($lf in $lockFiles) {
 
     # If a PR already exists for this branch, the agent may have finished; just clean the lock.
     $existingPR = @(& $Gh pr list --repo $Slug --head $lock.branch --state open --json number | ConvertFrom-Json)
+    if ($LASTEXITCODE -ne 0) {
+        # Can't confirm whether a PR already exists; proceeding could open a duplicate.
+        # Skip this lock and let the next run retry once gh is reachable again.
+        Write-Warning "[dispatch-recovery] Issue #${n}: 'gh pr list' failed (exit $LASTEXITCODE); skipping this lock to avoid a duplicate PR (will retry next run)."
+        continue
+    }
     if ($existingPR.Count -gt 0) {
         Write-Host "[dispatch-recovery] Issue #${n}: PR #$($existingPR[0].number) already open; removing stale lock only."
         Remove-Item $lf.FullName -ErrorAction SilentlyContinue
@@ -96,6 +103,14 @@ $($commits.Count) commit(s) were found on this branch; opening as a draft PR for
         $prUrl = & $Gh pr create --repo $Slug --head $lock.branch --base main --draft `
             --title "[DRAFT] Issue #$n — orphaned by interrupted agent" `
             --body-file $tmp
+        if ($LASTEXITCODE -ne 0) {
+            # PR creation failed: the branch is pushed but unmerged. Leave the lock and
+            # worktree in place so the next run retries, rather than deleting them below
+            # and silently stranding the orphaned branch with no PR.
+            Write-Warning "[dispatch-recovery] Issue #${n}: 'gh pr create' failed (exit $LASTEXITCODE); leaving the lock for the next run to retry."
+            Remove-Item $tmp -ErrorAction SilentlyContinue
+            continue
+        }
         Remove-Item $tmp -ErrorAction SilentlyContinue
 
         # Add needs-attention to both the PR and the issue.
@@ -109,6 +124,8 @@ $($commits.Count) commit(s) were found on this branch; opening as a draft PR for
         & $Gh issue edit $n --repo $Slug --add-label "needs-attention"
     } else {
         # No commits: silently unclaim so the next dispatch run can re-dispatch.
+        # Removing in-progress here is dispatcher-owned cleanup (this script runs only from
+        # within the dispatcher loop, DISPATCH.md 1c) — not a cross-loop label write.
         Write-Host "[dispatch-recovery] Issue #${n}: no commits; unclaiming for re-dispatch."
         & $Gh issue edit $n --repo $Slug --remove-label "in-progress"
     }
