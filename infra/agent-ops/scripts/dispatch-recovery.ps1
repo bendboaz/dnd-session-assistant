@@ -1,4 +1,4 @@
-# dispatch-recovery.ps1
+﻿# dispatch-recovery.ps1
 # Dead-agent recovery scan for the dispatcher loop.
 # Runs at the start of every dispatch session (DISPATCH.md ss1c).
 # Finds lock files left by interrupted subagent sessions and recovers their state:
@@ -42,16 +42,16 @@ foreach ($lf in $lockFiles) {
     $alive = Test-SessionActive $lock.sessionId
 
     if ($alive -and $age.TotalHours -lt 2) {
-        Write-Host "[dispatch-recovery] Issue #$n: session $($lock.sessionId) still active ($([int]$age.TotalMinutes)min); skipping."
+        Write-Host "[dispatch-recovery] Issue #${n}: session $($lock.sessionId) still active ($([int]$age.TotalMinutes)min); skipping."
         continue
     }
 
-    Write-Host "[dispatch-recovery] Issue #$n: dead agent (session=$($lock.sessionId), age=$([int]$age.TotalMinutes)min)"
+    Write-Host "[dispatch-recovery] Issue #${n}: dead agent (session=$($lock.sessionId), age=$([int]$age.TotalMinutes)min)"
 
     # If a PR already exists for this branch, the agent may have finished; just clean the lock.
     $existingPR = @(& $Gh pr list --repo $Slug --head $lock.branch --state open --json number | ConvertFrom-Json)
     if ($existingPR.Count -gt 0) {
-        Write-Host "[dispatch-recovery] Issue #$n: PR #$($existingPR[0].number) already open; removing stale lock only."
+        Write-Host "[dispatch-recovery] Issue #${n}: PR #$($existingPR[0].number) already open; removing stale lock only."
         Remove-Item $lf.FullName -ErrorAction SilentlyContinue
         continue
     }
@@ -60,14 +60,28 @@ foreach ($lf in $lockFiles) {
     $hasCommits = $false
     $wt = $lock.worktreePath
     if (Test-Path $wt) {
-        $commits = @(git -C $wt log "origin/main..HEAD" --oneline 2>$null | Where-Object { $_ })
+        $commits = @(git -C $wt log "origin/main..HEAD" --oneline | Where-Object { $_ })
+        if ($LASTEXITCODE -ne 0) {
+            # An invalid/corrupt worktree makes git fail; without this check the empty
+            # result would silently take the "no commits" path and unclaim a branch that
+            # may actually hold work. Treat the failure as "unknown" -> no commits, but loudly.
+            Write-Warning "[dispatch-recovery] Issue #${n}: 'git log' failed in $wt (exit $LASTEXITCODE); treating as no commits."
+            $commits = @()
+        }
         $hasCommits = $commits.Count -gt 0
     }
 
     if ($hasCommits) {
-        Write-Host "[dispatch-recovery] Issue #$n: $($commits.Count) commit(s) found; salvaging as draft PR."
+        Write-Host "[dispatch-recovery] Issue #${n}: $($commits.Count) commit(s) found; salvaging as draft PR."
 
-        git -C $wt push origin $lock.branch 2>$null
+        git -C $wt push origin $lock.branch
+        if ($LASTEXITCODE -ne 0) {
+            # Without the branch on the remote, the draft PR creation below would fail
+            # confusingly. Skip this lock (leave it + the worktree in place) so the next
+            # dispatch run retries the recovery rather than half-completing it.
+            Write-Warning "[dispatch-recovery] Issue #${n}: 'git push' failed (exit $LASTEXITCODE); skipping PR creation and leaving the lock for the next run to retry."
+            continue
+        }
 
         $tmp = "$StateDir\cc-comment.txt"
         @"
@@ -87,23 +101,26 @@ $($commits.Count) commit(s) were found on this branch; opening as a draft PR for
         # Add needs-attention to both the PR and the issue.
         $prNumber = ($prUrl -split '/')[-1]
         if ($prNumber -match '^\d+$') {
-            & $Gh pr edit $prNumber --repo $Slug --add-label "needs-attention" 2>$null
+            & $Gh pr edit $prNumber --repo $Slug --add-label "needs-attention"
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "[dispatch-recovery] Issue #${n}: could not add 'needs-attention' to PR #$prNumber (exit $LASTEXITCODE)."
+            }
         }
         & $Gh issue edit $n --repo $Slug --add-label "needs-attention"
     } else {
         # No commits: silently unclaim so the next dispatch run can re-dispatch.
-        Write-Host "[dispatch-recovery] Issue #$n: no commits; unclaiming for re-dispatch."
+        Write-Host "[dispatch-recovery] Issue #${n}: no commits; unclaiming for re-dispatch."
         & $Gh issue edit $n --repo $Slug --remove-label "in-progress"
     }
 
     # Remove the worktree (branch stays on remote if it was pushed above).
     if (Test-Path $wt) {
-        git -C $RepoRoot worktree remove $wt 2>$null
+        git -C $RepoRoot worktree remove $wt
         if (Test-Path $wt) {
-            Write-Warning "[dispatch-recovery] Issue #$n: worktree removal blocked (file lock?); manual cleanup needed: $wt"
+            Write-Warning "[dispatch-recovery] Issue #${n}: worktree removal blocked (file lock?); manual cleanup needed: $wt"
         }
     }
 
     Remove-Item $lf.FullName -ErrorAction SilentlyContinue
-    Write-Host "[dispatch-recovery] Issue #$n: recovery complete."
+    Write-Host "[dispatch-recovery] Issue #${n}: recovery complete."
 }

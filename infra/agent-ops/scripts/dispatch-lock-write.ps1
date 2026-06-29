@@ -11,15 +11,18 @@ param(
     [Parameter(Mandatory)][int]   $IssueNumber,
     [Parameter(Mandatory)][string]$WorktreePath,
     [Parameter(Mandatory)][string]$Branch,
-    [string]$StateDir = "D:\Users\Boaz\CodeProjects\dnd-session-assistant\.claude\agent-state"
+    [string]$StateDir       = "D:\Users\Boaz\CodeProjects\dnd-session-assistant\.claude\agent-state",
+    [string]$ScratchpadBase = "C:\Users\Boaz\AppData\Local\Temp\claude\D--Users-Boaz-CodeProjects"
 )
 
 $ErrorActionPreference = 'Continue'
 
-$scratchpadBase = "C:\Users\Boaz\AppData\Local\Temp\claude\D--Users-Boaz-CodeProjects"
-$sessionId = (Get-ChildItem "$scratchpadBase\*\scratchpad" -Directory -ErrorAction SilentlyContinue |
+$sessionId = (Get-ChildItem "$ScratchpadBase\*\scratchpad" -Directory -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1).Parent.Name
-if (-not $sessionId) { $sessionId = "unknown-$(Get-Date -Format 'HHmmss')" }
+if (-not $sessionId) {
+    $sessionId = "unknown-$(Get-Date -Format 'HHmmss')"
+    Write-Warning "[dispatch-lock] Could not determine the Claude session ID from '$ScratchpadBase'; using fallback '$sessionId'. Dead-agent recovery for issue #$IssueNumber will rely on the 2-hour TTL instead of the live-session check."
+}
 
 if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Force -Path $StateDir | Out-Null }
 
