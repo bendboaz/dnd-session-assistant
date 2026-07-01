@@ -117,3 +117,16 @@ prefix its PR comments with a role header so the AI review (and human readers) c
 - **PR reviewer:** always assign the repo owner as reviewer when opening a PR. Resolve the owner
   with `gh repo view --json owner --jq .owner.login` and pass it as `--reviewer <owner>` to
   `gh pr create`. Do not open a PR without assigning this reviewer.
+
+## Agent-ops plugin (Phase A — transition in progress)
+
+The `agent-ops` plugin from `agent-autonomy-kit` is being onboarded to this repo. Per-repo config
+now lives in `.agent-ops/`:
+
+- `.agent-ops/config.json` — committed identity, labels, verify commands
+- `.agent-ops/config.local.json` — **gitignored** machine paths (`worktreeBase`, `venvScripts`)
+- `.agent-ops/REPO-FACTS.md` — contract files, required checks, conventions (this repo's §7)
+- `.agent-ops/REVIEW-CHECKLIST.md` — D&D-specific AI-review checklist
+
+The existing `infra/agent-ops/` scripts remain the active procedures through Phase A. They will
+be removed when Phase B completes the cutover to the plugin.
