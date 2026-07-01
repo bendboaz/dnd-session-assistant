@@ -1,9 +1,9 @@
 // App composition (WP-C integration seam). Wires the app store (compendium load,
 // scanner, STT, transcript POST, pinning) into the mobile-first layout.
 //
-// Fake -> real swap points live in src/state/useAppStore.ts (search `SWAP:`):
-//   - createFakeScanner  -> createScanner   (WP-A, '../matching')
-//   - createFakeProvider -> createProvider  (WP-B, '../stt')
+// Fake → real swap points live in src/state/useAppStore.ts (search `SWAP:`):
+//   - createFakeScanner  → createScanner   (WP-A, '../matching')
+//   - createFakeProvider → createProvider  (WP-B, '../stt')
 
 import { useAppStore } from './state/useAppStore'
 import { DetectionFeed } from './ui/DetectionFeed'
