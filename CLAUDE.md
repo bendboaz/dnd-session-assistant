@@ -11,15 +11,15 @@ autonomous loops plus an interactive orchestrator; each has a different scope an
 
 | Signal | Role | First thing to read |
 |---|---|---|
-| `$env:AGENT_LOOP -eq '1'`, invoked by `run-dispatch.ps1` | **Dispatcher agent** | `infra/agent-ops/DISPATCH.md` |
-| `$env:AGENT_LOOP -eq '1'`, invoked by `run-babysit.ps1` | **Babysitter agent** | `infra/agent-ops/BABYSIT.md` |
-| `$env:AGENT_LOOP -eq '1'`, invoked by `run-triage.ps1` | **Triage agent** | `infra/agent-ops/TRIAGE.md` |
-| Interactive session, task brief says "orchestrator" or "healthcheck" | **Orchestrator** | `infra/agent-ops/ORCHESTRATOR.md` |
+| `$env:AGENT_LOOP -eq '1'`, invoked by `run-dispatch.ps1` | **Dispatcher agent** | Agent-ops plugin: dispatch skill → `playbooks/DISPATCH.md`; repo facts → `.agent-ops/REPO-FACTS.md` |
+| `$env:AGENT_LOOP -eq '1'`, invoked by `run-babysit.ps1` | **Babysitter agent** | Agent-ops plugin: babysit skill → `playbooks/BABYSIT.md`; repo facts → `.agent-ops/REPO-FACTS.md` |
+| `$env:AGENT_LOOP -eq '1'`, invoked by `run-triage.ps1` | **Triage agent** | Agent-ops plugin: triage skill → `playbooks/TRIAGE.md`; repo facts → `.agent-ops/REPO-FACTS.md` |
+| Interactive session, task brief says "orchestrator" or "healthcheck" | **Orchestrator** | Agent-ops plugin: `playbooks/ORCHESTRATOR.md`; repo facts → `.agent-ops/REPO-FACTS.md` |
 | None of the above | **Ad-hoc interactive** | This file only |
 
 **If your role isn't clear from the task brief or environment, ask before doing anything.** An
 unspecified interactive session is not automatically the orchestrator. Do not touch
-`infra/agent-ops/**` or `.github/workflows/**` unless you are confirmed as the orchestrator or the
+`.agent-ops/**` or `.github/workflows/**` unless you are confirmed as the orchestrator or the
 human has explicitly directed the edit in this session.
 
 ## Platform (Windows)
@@ -118,15 +118,16 @@ prefix its PR comments with a role header so the AI review (and human readers) c
   with `gh repo view --json owner --jq .owner.login` and pass it as `--reviewer <owner>` to
   `gh pr create`. Do not open a PR without assigning this reviewer.
 
-## Agent-ops plugin (Phase A — transition in progress)
+## Agent-ops plugin
 
-The `agent-ops` plugin from `agent-autonomy-kit` is being onboarded to this repo. Per-repo config
-now lives in `.agent-ops/`:
+The autonomous loops run via the `agent-ops` plugin from `agent-autonomy-kit`. Per-repo config
+lives in `.agent-ops/`:
 
 - `.agent-ops/config.json` — committed identity, labels, verify commands
 - `.agent-ops/config.local.json` — **gitignored** machine paths (`worktreeBase`, `venvScripts`)
-- `.agent-ops/REPO-FACTS.md` — contract files, required checks, conventions (this repo's §7)
+- `.agent-ops/REPO-FACTS.md` — contract files, required checks, conventions
 - `.agent-ops/REVIEW-CHECKLIST.md` — D&D-specific AI-review checklist
 
-The existing `infra/agent-ops/` scripts remain the active procedures through Phase A. They will
-be removed when Phase B completes the cutover to the plugin.
+See `docs/ONBOARDING.md` in `agent-autonomy-kit` for the full setup guide. Loop procedures
+are the plugin's generic playbooks; repo-specific facts the playbooks defer to are in
+`.agent-ops/REPO-FACTS.md`.
