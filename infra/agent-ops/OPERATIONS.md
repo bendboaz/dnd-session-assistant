@@ -30,7 +30,7 @@ guarantee, enforced by GitHub, not by agent good behavior.
   ```powershell
   $env:GH_APP_ID = "4070567"
   $env:GH_APP_INSTALLATION_ID = "140736715"
-  $env:GH_APP_PRIVATE_KEY_PATH = "<path to the .pem, outside the repo>"
+  # GH_APP_PRIVATE_KEY_PATH must be a Windows user-scope env var (see constraint below)
   $env:GH_TOKEN = (python infra/agent-ops/agent_token.py)   # gh + git now act as the App
   & "C:\Program Files\GitHub CLI\gh.exe" auth status         # verify: shows the App, not the human
   ```
@@ -47,6 +47,17 @@ orchestrator session does not hold the key. Therefore every loop here runs as **
   now; see §6** (cloud routines bill as API usage).
 
 The token is short-lived (~10 min). Long operations should re-mint rather than cache.
+
+> **Sensitive-file hook — never set `GH_APP_PRIVATE_KEY_PATH` inside a Claude session.**
+> A global pre-tool-use hook blocks any shell command containing `.pem`. `GH_APP_PRIVATE_KEY_PATH`
+> must be set once as a **Windows user-scope environment variable** (System Properties → Advanced →
+> Environment Variables) so it is inherited by all processes, including the Claude process launched
+> by a wrapper script. Running `python infra/agent-ops/agent_token.py` is always safe — the command
+> itself contains no `.pem`; Python reads the path from `os.environ` internally.
+>
+> **When launched by a wrapper** (`run-babysit.ps1`, `run-triage.ps1`, `run-dispatch.ps1`),
+> `GH_TOKEN` is already minted before Claude starts. Skills must check for an existing `GH_TOKEN`
+> first (`gh auth status`) and skip the minting step if it shows `dnd-agent[bot]`.
 
 ---
 
