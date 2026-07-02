@@ -154,3 +154,55 @@ gcloud secrets list --project=$PROJECT_ID
 
 The `/api/stt-token` call returning 401 without a Firebase ID token is the auth gate
 working as intended.
+
+## 10. Monitoring & Alerting
+
+`infra/monitoring.ps1` creates one email notification channel and three Cloud Monitoring
+alert policies for `dnd-session-backend`, so failures are surfaced instead of discovered
+mid-session. Requires the `alpha`/`beta` gcloud components:
+
+```powershell
+gcloud components install alpha beta
+```
+
+Edit `$ALERT_EMAIL` at the top of the script, then run it:
+
+```powershell
+.\infra\monitoring.ps1
+```
+
+It creates:
+
+1. **Storage fallback (log-based)** — fires when `backend/storage.py` logs a Firestore
+   fallback warning (ADC failure, ineligible credentials, Firestore outage/quota). Matches
+   both `jsonPayload.message` and `textPayload`, since the backend currently logs via plain
+   `logging.basicConfig` (text, not structured JSON) — see the script comments for the exact
+   log lines matched.
+2. **Error rate** — `run.googleapis.com/request_count` filtered to `response_code_class=5xx`,
+   threshold >5 requests/min sustained for 2 consecutive minutes.
+3. **Latency (lower priority)** — `run.googleapis.com/request_latencies` p95 > 2000ms for
+   5 consecutive minutes. **Known limitation:** Cloud Run's built-in latency metric has no
+   per-route label, so this alerts on the whole service's p95, not `/api/stt-token`
+   specifically — see the script's comments for the caveat and a possible log-based-metric
+   follow-up.
+
+The script is **not idempotent** — re-running it creates new channel/policy resources rather
+than updating existing ones. See the "Cleanup" comment block at the bottom of the script for
+the list/delete commands to tear down and re-run cleanly.
+
+### Verification
+
+After running the script, confirm end-to-end delivery manually (this can't be automated from
+a sandboxed environment without live GCP credentials):
+
+```powershell
+# Storage-fallback alert: deliberately misconfigure Firestore access (e.g. revoke the
+# runtime SA's Firestore role, or point GCP_PROJECT at a project without a Firestore DB),
+# hit any endpoint that touches storage, and confirm an email arrives within ~5 minutes.
+
+# Error-rate alert: drive a burst of 5xx responses (e.g. loop a request against a route
+# that errors, or restart with a broken secret so auth/storage calls fail) and confirm an
+# email arrives within ~5 minutes.
+
+gcloud alpha monitoring policies list --project=$PROJECT_ID --format="table(displayName,enabled)"
+```
