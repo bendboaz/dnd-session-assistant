@@ -60,7 +60,7 @@ Write-Host "Notification channel: $CHANNEL_NAME"
 $storageFallbackFilter = 'resource.type="cloud_run_revision" resource.labels.service_name="' + $BACKEND_SERVICE_NAME + '" (jsonPayload.message=~"(?i)(falling back to local jsonl storage|no firestore credentials configured)" OR textPayload=~"(?i)(falling back to local jsonl storage|no firestore credentials configured)")'
 
 $storageFallbackPolicy = @"
-displayName: "$BACKEND_SERVICE_NAME: storage fallback detected"
+displayName: "${BACKEND_SERVICE_NAME}: storage fallback detected"
 combiner: OR
 conditions:
   - displayName: "Firestore fallback log entry (storage.py)"
@@ -99,7 +99,7 @@ Remove-Item $storageFallbackFile -Force -ErrorAction SilentlyContinue
 $errorRateFilter = 'resource.type="cloud_run_revision" resource.labels.service_name="' + $BACKEND_SERVICE_NAME + '" metric.type="run.googleapis.com/request_count" metric.labels.response_code_class="5xx"'
 
 $errorRatePolicy = @"
-displayName: "$BACKEND_SERVICE_NAME: elevated 5xx error rate"
+displayName: "${BACKEND_SERVICE_NAME}: elevated 5xx error rate"
 combiner: OR
 conditions:
   - displayName: ">5 5xx requests/min for 2 min"
@@ -154,7 +154,7 @@ Remove-Item $errorRateFile -Force -ErrorAction SilentlyContinue
 $latencyFilter = 'resource.type="cloud_run_revision" resource.labels.service_name="' + $BACKEND_SERVICE_NAME + '" metric.type="run.googleapis.com/request_latencies"'
 
 $latencyPolicy = @"
-displayName: "$BACKEND_SERVICE_NAME: p95 latency high (service-wide)"
+displayName: "${BACKEND_SERVICE_NAME}: p95 latency high (service-wide)"
 combiner: OR
 conditions:
   - displayName: "p95 latency > 2000ms for 5 min"
