@@ -18,7 +18,7 @@ $GCP_REGION           = "europe-west1"
 $BACKEND_SERVICE_NAME = "dnd-session-backend"
 
 # Email that receives alerts. Fill this in before running (project owner's address).
-$ALERT_EMAIL = "REPLACE_ME@example.com"
+$ALERT_EMAIL = "bendboaz@gmail.com"
 
 if ($ALERT_EMAIL -eq "REPLACE_ME@example.com") {
     Write-Error "Set `$ALERT_EMAIL to a real address before running this script."
