@@ -32,7 +32,10 @@ from models import (  # noqa: E402
     CreateSessionRequest,
     CreateSessionResponse,
     HealthResponse,
+    SessionListResponse,
     SttTokenResponse,
+    TranscriptResponse,
+    TranscriptSegmentResponse,
 )
 from auth import FirebaseUser, require_user  # noqa: E402
 from storage import Storage, init_storage  # noqa: E402
@@ -88,6 +91,30 @@ async def append_transcript(
 ) -> AppendTranscriptResponse:
     count = await storage.append_segments(session_id, req.segments)
     return AppendTranscriptResponse(ok=True, count=count)
+
+
+@app.get("/api/sessions", response_model=SessionListResponse)
+async def list_sessions(
+    _user: FirebaseUser = Depends(require_user),
+) -> SessionListResponse:
+    sessions = await storage.list_sessions()
+    return SessionListResponse(sessions=sessions)
+
+
+@app.get(
+    "/api/sessions/{session_id}/transcript", response_model=TranscriptResponse
+)
+async def get_transcript(
+    session_id: str,
+    _user: FirebaseUser = Depends(require_user),
+) -> TranscriptResponse:
+    segments = await storage.get_transcript(session_id)
+    return TranscriptResponse(
+        segments=[
+            TranscriptSegmentResponse(text=s.text, startTime=s.startTime, ts=s.ts)
+            for s in segments
+        ]
+    )
 
 
 @app.post(

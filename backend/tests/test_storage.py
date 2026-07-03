@@ -93,6 +93,76 @@ class TestTranscriptAppend:
 
 
 # ---------------------------------------------------------------------------
+# Session listing (LocalStorage)
+# ---------------------------------------------------------------------------
+
+class TestListSessions:
+    def test_empty_when_no_sessions(self, client) -> None:
+        resp = client.get("/api/sessions")
+        assert resp.status_code == 200
+        assert resp.json()["sessions"] == []
+
+    def test_lists_created_sessions_with_metadata(self, client) -> None:
+        session_id = client.post("/api/sessions", json={"title": "Campaign night 1"}).json()["id"]
+        client.post(
+            f"/api/sessions/{session_id}/transcript",
+            json={"segments": [{"text": "one", "ts": 1}, {"text": "two", "ts": 2}]},
+        )
+
+        resp = client.get("/api/sessions")
+        assert resp.status_code == 200
+        sessions = resp.json()["sessions"]
+        assert len(sessions) == 1
+        assert sessions[0]["id"] == session_id
+        assert sessions[0]["title"] == "Campaign night 1"
+        assert sessions[0]["segmentCount"] == 2
+
+    def test_newest_session_listed_first(self, client) -> None:
+        first_id = client.post("/api/sessions", json={"title": "First"}).json()["id"]
+        second_id = client.post("/api/sessions", json={"title": "Second"}).json()["id"]
+
+        sessions = client.get("/api/sessions").json()["sessions"]
+        ids = [s["id"] for s in sessions]
+        # Both sessions must be present, with the most-recently-created first.
+        assert ids.index(second_id) < ids.index(first_id)
+
+
+# ---------------------------------------------------------------------------
+# Transcript retrieval (LocalStorage)
+# ---------------------------------------------------------------------------
+
+class TestGetTranscript:
+    def test_empty_when_no_segments(self, client) -> None:
+        session_id = client.post("/api/sessions", json={}).json()["id"]
+        resp = client.get(f"/api/sessions/{session_id}/transcript")
+        assert resp.status_code == 200
+        assert resp.json()["segments"] == []
+
+    def test_empty_for_unknown_session(self, client) -> None:
+        resp = client.get("/api/sessions/does-not-exist/transcript")
+        assert resp.status_code == 200
+        assert resp.json()["segments"] == []
+
+    def test_returns_segments_in_timestamp_order(self, client) -> None:
+        session_id = client.post("/api/sessions", json={}).json()["id"]
+        # Post out of order; the response must still come back sorted by ts.
+        client.post(
+            f"/api/sessions/{session_id}/transcript",
+            json={"segments": [{"text": "third", "ts": 300}]},
+        )
+        client.post(
+            f"/api/sessions/{session_id}/transcript",
+            json={"segments": [{"text": "first", "ts": 100}, {"text": "second", "ts": 200}]},
+        )
+
+        resp = client.get(f"/api/sessions/{session_id}/transcript")
+        assert resp.status_code == 200
+        segments = resp.json()["segments"]
+        assert [s["text"] for s in segments] == ["first", "second", "third"]
+        assert [s["ts"] for s in segments] == [100, 200, 300]
+
+
+# ---------------------------------------------------------------------------
 # Hebrew UTF-8 round-trip
 # ---------------------------------------------------------------------------
 

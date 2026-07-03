@@ -49,6 +49,31 @@ class Segment(BaseModel):
     ts: int = Field(..., description="Epoch milliseconds when the segment was received.")
 
 
+class SessionSummary(BaseModel):
+    """One row in the session browser list (`GET /api/sessions`)."""
+
+    id: str
+    title: str | None = None
+    startedAt: str | None = None
+    segmentCount: int = 0
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionSummary]
+
+
+class TranscriptSegmentResponse(BaseModel):
+    """One stored segment, as returned by `GET /api/sessions/{id}/transcript`."""
+
+    text: str
+    startTime: float | None = None
+    ts: int
+
+
+class TranscriptResponse(BaseModel):
+    segments: list[TranscriptSegmentResponse]
+
+
 class AppendTranscriptRequest(BaseModel):
     # Hard cap at 1000 segments per request — protects against runaway Firestore
     # writes.  The frontend chunks backfill into ≤100-segment batches, so 1000

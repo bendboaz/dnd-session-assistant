@@ -95,8 +95,12 @@ function dropSession(sessionId: string): void {
 
 // ---- auth helpers -----------------------------------------------------------
 
-/** Build auth headers. Returns {} when no user is signed in (local dev bypass). */
-async function authHeaders(): Promise<Record<string, string>> {
+/**
+ * Build auth headers. Returns {} when no user is signed in (local dev bypass).
+ * Exported so other state modules issuing authenticated GETs (e.g. `./sessions`)
+ * share this exact logic rather than re-implementing it.
+ */
+export async function authHeaders(): Promise<Record<string, string>> {
   const token = await getIdToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
@@ -104,9 +108,9 @@ async function authHeaders(): Promise<Record<string, string>> {
 /**
  * Handle a 401 response: sign the user out so the SignInGate shows the sign-in
  * screen. The failing request is not retried — the next session creation / POST
- * will succeed once the user re-authenticates.
+ * will succeed once the user re-authenticates. Exported for reuse by `./sessions`.
  */
-function handle401(): void {
+export function handle401(): void {
   console.warn('[transcript] 401 — signing out to prompt re-auth')
   void signOut()
 }
