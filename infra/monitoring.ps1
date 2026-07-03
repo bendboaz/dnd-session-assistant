@@ -26,14 +26,14 @@
 
 # Configuration
 $GCP_PROJECT_ID       = "dnd-session-assistant-52633"
-$GCP_REGION           = "europe-west1"
 $BACKEND_SERVICE_NAME = "dnd-session-backend"
 
-# Email that receives alerts. Fill this in before running (project owner's address).
-$ALERT_EMAIL = "bendboaz@gmail.com"
+# Email that receives alerts (project owner's address). Read from the environment
+# rather than hard-coded, so it never needs to be committed to this public repo.
+$ALERT_EMAIL = $env:ALERT_EMAIL
 
-if ($ALERT_EMAIL -eq "REPLACE_ME@example.com") {
-    Write-Error "Set `$ALERT_EMAIL to a real address before running this script."
+if ([string]::IsNullOrWhiteSpace($ALERT_EMAIL)) {
+    Write-Error 'Set $env:ALERT_EMAIL to a real address before running this script.'
     exit 1
 }
 
@@ -87,18 +87,19 @@ alertStrategy:
 "@
 
 $storageFallbackFile = "$env:TEMP\dnd-alert-storage-fallback.yaml"
-$storageFallbackPolicy | Set-Content -Path $storageFallbackFile -Encoding utf8
+[System.IO.File]::WriteAllText($storageFallbackFile, $storageFallbackPolicy)
 
 Write-Host "Creating storage-fallback log-based alert policy..."
 gcloud alpha monitoring policies create `
     --project=$GCP_PROJECT_ID `
     --policy-from-file=$storageFallbackFile
+$storageFallbackOk = $?
+Remove-Item $storageFallbackFile -Force -ErrorAction SilentlyContinue
 
-if (-not $?) {
+if (-not $storageFallbackOk) {
     Write-Error "Failed to create storage-fallback alert policy"
     exit 1
 }
-Remove-Item $storageFallbackFile -Force -ErrorAction SilentlyContinue
 
 # ---------------------------------------------------------------------------
 # Step 3: Error-rate alert - >5 5xx responses/min for 2 consecutive minutes.
@@ -132,18 +133,19 @@ notificationChannels:
 "@
 
 $errorRateFile = "$env:TEMP\dnd-alert-error-rate.yaml"
-$errorRatePolicy | Set-Content -Path $errorRateFile -Encoding utf8
+[System.IO.File]::WriteAllText($errorRateFile, $errorRatePolicy)
 
 Write-Host "Creating error-rate alert policy..."
 gcloud alpha monitoring policies create `
     --project=$GCP_PROJECT_ID `
     --policy-from-file=$errorRateFile
+$errorRateOk = $?
+Remove-Item $errorRateFile -Force -ErrorAction SilentlyContinue
 
-if (-not $?) {
+if (-not $errorRateOk) {
     Write-Error "Failed to create error-rate alert policy"
     exit 1
 }
-Remove-Item $errorRateFile -Force -ErrorAction SilentlyContinue
 
 # ---------------------------------------------------------------------------
 # Step 4: Latency alert (lower priority) - p95 request latency > 2000ms for
@@ -184,18 +186,19 @@ notificationChannels:
 "@
 
 $latencyFile = "$env:TEMP\dnd-alert-latency.yaml"
-$latencyPolicy | Set-Content -Path $latencyFile -Encoding utf8
+[System.IO.File]::WriteAllText($latencyFile, $latencyPolicy)
 
 Write-Host "Creating latency alert policy..."
 gcloud alpha monitoring policies create `
     --project=$GCP_PROJECT_ID `
     --policy-from-file=$latencyFile
+$latencyOk = $?
+Remove-Item $latencyFile -Force -ErrorAction SilentlyContinue
 
-if (-not $?) {
+if (-not $latencyOk) {
     Write-Error "Failed to create latency alert policy"
     exit 1
 }
-Remove-Item $latencyFile -Force -ErrorAction SilentlyContinue
 
 Write-Host "Done. Review policies at:"
 Write-Host "https://console.cloud.google.com/monitoring/alerting/policies?project=$GCP_PROJECT_ID"

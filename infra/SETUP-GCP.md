@@ -165,9 +165,11 @@ mid-session. Requires the `alpha`/`beta` gcloud components:
 gcloud components install alpha beta
 ```
 
-Edit `$ALERT_EMAIL` at the top of the script, then run it:
+Set `$env:ALERT_EMAIL` (project owner's address) before running, so the address never needs
+to be hard-coded and committed to this public repo:
 
 ```powershell
+$env:ALERT_EMAIL = "you@example.com"
 .\infra\monitoring.ps1
 ```
 
