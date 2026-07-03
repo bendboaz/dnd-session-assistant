@@ -11,6 +11,18 @@
 #
 # Requires the `alpha` and `beta` gcloud components:
 #   gcloud components install alpha beta
+#
+# Before running, confirm gcloud is authenticated as the right account and the
+# project matches (each gcloud call below also passes --project explicitly, so
+# this is a sanity check, not a hard dependency on the active config):
+#   gcloud auth list --format="table(account,status)"
+#   gcloud config get-value project
+#
+# NOTE: alertStrategy.notificationRateLimit is only valid on log-based policies
+# (conditionMatchedLog). The API rejects it on threshold-based policies
+# (conditionThreshold) with INVALID_ARGUMENT, so only the storage-fallback
+# policy below sets it -- the error-rate and latency policies deliberately omit
+# alertStrategy.
 
 # Configuration
 $GCP_PROJECT_ID       = "dnd-session-assistant-52633"
@@ -117,9 +129,6 @@ conditions:
             - resource.label.service_name
 notificationChannels:
   - "$CHANNEL_NAME"
-alertStrategy:
-  notificationRateLimit:
-    period: 300s
 "@
 
 $errorRateFile = "$env:TEMP\dnd-alert-error-rate.yaml"
@@ -172,9 +181,6 @@ conditions:
             - resource.label.service_name
 notificationChannels:
   - "$CHANNEL_NAME"
-alertStrategy:
-  notificationRateLimit:
-    period: 300s
 "@
 
 $latencyFile = "$env:TEMP\dnd-alert-latency.yaml"
