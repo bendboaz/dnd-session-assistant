@@ -193,6 +193,30 @@ describe('postTranscript (buffer)', () => {
   })
 })
 
+// ---- postTranscript: pre-existing queue -------------------------------------
+
+describe('postTranscript (pre-existing queue)', () => {
+  it('flushes backlog segments (in order) before appending the new segment', async () => {
+    // Simulate segments left over from a prior session/page-load (e.g. a crash
+    // or reload before the previous flush completed).
+    enqueueSegments('s1', [seg('backlog-1'), seg('backlog-2')])
+
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await postTranscript('s1', [seg('new-segment')])
+
+    // All three fit in a single batch (well under BATCH_SIZE).
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [, init] = fetchMock.mock.calls[0] as [string, { body: string }]
+    const body = JSON.parse(init.body) as { segments: { text: string }[] }
+    expect(body.segments.map((s) => s.text)).toEqual(['backlog-1', 'backlog-2', 'new-segment'])
+
+    // Backlog and new segment are both cleared once the batch succeeds.
+    expect(readQueue()).toHaveLength(0)
+  })
+})
+
 // ---- postTranscript: 'ok' | 'stale' return contract -------------------------
 
 describe('postTranscript (return contract)', () => {
