@@ -208,3 +208,39 @@ a sandboxed environment without live GCP credentials):
 
 gcloud alpha monitoring policies list --project=$PROJECT_ID --format="table(displayName,enabled)"
 ```
+
+## 11. Billing Killswitch
+
+A programmatic backstop on top of `--max-instances=2`: if spend crosses 90% of the $5
+budget, a Cloud Function forces Cloud Run to `--max-instances=0` (no new requests; no new
+compute spend; existing Firestore/Secret Manager data stays reachable for investigation).
+See `infra/OPERATIONS.md` for how to detect it firing, verify no data loss, and recover.
+
+**Manual step (console only — GCP Billing has no gcloud/API surface for connecting a
+budget to a Pub/Sub topic as of this writing):** run `infra/killswitch.ps1` first so the
+`budget-alert` topic exists, then in the GCP Billing console go to **Budgets & alerts** →
+select the $5 budget → **Manage notifications** → **Connect a Pub/Sub topic** →
+`budget-alert`.
+
+**Automated (PowerShell):**
+```powershell
+.\infra\killswitch.ps1
+```
+
+This creates the `budget-alert` Pub/Sub topic, a dedicated `budget-killswitch-fn` service
+account, and deploys the `budget-killswitch` Cloud Function (`infra/killswitch/main.py`,
+`--trigger-topic budget-alert --runtime python312 --region europe-west1`) subscribed to
+that topic.
+
+**IAM requirement:** the function's runtime service account needs `run.services.update` on
+`dnd-session-backend`. The script grants this via `roles/run.developer`, scoped to that one
+service with `gcloud run services add-iam-policy-binding` — deliberately not a
+project-level `roles/run.admin` grant, so a compromised function can't touch anything else.
+
+**Verification (safe — publishes a mock message, does not touch real budget/billing):**
+```powershell
+$payload = @{ costAmount = 4.6; budgetAmount = 5.0; budgetDisplayName = "test" } | ConvertTo-Json -Compress
+gcloud pubsub topics publish budget-alert --message $payload --project $PROJECT_ID
+# Within ~60s, dnd-session-backend should show max-instances=0:
+gcloud run services describe dnd-session-backend --region=$REGION --project=$PROJECT_ID | Select-String maxScale
+```
