@@ -21,26 +21,17 @@ if str(_BACKEND_DIR) not in sys.path:
 
 
 @pytest.fixture()
-def tmp_storage(tmp_path: Path) -> Generator[Path, None, None]:
+def tmp_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point LOCAL_STORAGE_DIR at a fresh temp directory for each test."""
-    old = os.environ.get("LOCAL_STORAGE_DIR")
-    os.environ["LOCAL_STORAGE_DIR"] = str(tmp_path)
-    yield tmp_path
-    if old is None:
-        os.environ.pop("LOCAL_STORAGE_DIR", None)
-    else:
-        os.environ["LOCAL_STORAGE_DIR"] = old
+    monkeypatch.setenv("LOCAL_STORAGE_DIR", str(tmp_path))
+    return tmp_path
 
 
 @pytest.fixture()
-def no_firestore_env() -> Generator[None, None, None]:
+def no_firestore_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure Firestore env vars are absent so init_storage() picks LocalStorage."""
-    keys = ("GOOGLE_APPLICATION_CREDENTIALS", "GCP_PROJECT", "GOOGLE_CLOUD_PROJECT")
-    saved = {k: os.environ.pop(k, None) for k in keys}
-    yield
-    for k, v in saved.items():
-        if v is not None:
-            os.environ[k] = v
+    for key in ("GOOGLE_APPLICATION_CREDENTIALS", "GCP_PROJECT", "GOOGLE_CLOUD_PROJECT"):
+        monkeypatch.delenv(key, raising=False)
 
 
 @pytest.fixture()
@@ -73,12 +64,6 @@ def client(tmp_storage: Path, no_firestore_env: None) -> Generator[TestClient, N
 
 
 @pytest.fixture()
-def fake_token_env() -> Generator[None, None, None]:
+def fake_token_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Enable the DEV_FAKE_TOKEN shortcut; restore afterwards."""
-    old = os.environ.get("DEV_FAKE_TOKEN")
-    os.environ["DEV_FAKE_TOKEN"] = "1"
-    yield
-    if old is None:
-        os.environ.pop("DEV_FAKE_TOKEN", None)
-    else:
-        os.environ["DEV_FAKE_TOKEN"] = old
+    monkeypatch.setenv("DEV_FAKE_TOKEN", "1")
