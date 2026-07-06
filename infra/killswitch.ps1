@@ -1,7 +1,8 @@
 # D&D Session Assistant - Billing Killswitch Setup Script
-# Wires a GCP budget alert -> Pub/Sub -> Cloud Function that scales dnd-session-backend
-# to --max-instances=0 once spend crosses 90% of the budget. See infra/OPERATIONS.md for
-# the recovery runbook.
+# Wires a GCP budget alert -> Pub/Sub -> Cloud Function that revokes allUsers' public
+# invoker access on dnd-session-backend once spend crosses 90% of the budget (Cloud Run
+# then rejects new requests with 403 before any instance starts -- no new compute spend).
+# See infra/OPERATIONS.md for the recovery runbook.
 
 # Configuration
 $GCP_PROJECT_ID = "dnd-session-assistant-52633"
@@ -11,6 +12,7 @@ $TOPIC_NAME = "budget-alert"
 $FUNCTION_NAME = "budget-killswitch"
 $FUNCTION_SA_NAME = "budget-killswitch-fn"
 $FUNCTION_SA_EMAIL = "$FUNCTION_SA_NAME@$GCP_PROJECT_ID.iam.gserviceaccount.com"
+$INVOKER_TOGGLE_ROLE_ID = "budgetKillswitchInvokerToggle"
 
 # Ensure gcloud is authenticated
 Write-Host "Authenticating with gcloud..."
@@ -35,11 +37,29 @@ if (-not $?) {
     Write-Warning "Service account create failed (may already exist) -- continuing."
 }
 
-Write-Host "Granting run.services.update on $BACKEND_SERVICE_NAME to $FUNCTION_SA_EMAIL..."
+# A custom role with ONLY run.services.{get,set}IamPolicy -- narrower than any
+# predefined role (roles/run.admin also grants delete/reconfigure on the service; there
+# is no predefined role that grants IAM-policy management alone). The function only
+# ever needs to flip one binding (allUsers/run.invoker), never touch scaling/revisions,
+# so this is the actual minimum needed -- see infra/killswitch/main.py for why an
+# earlier max-instances-based design was abandoned.
+Write-Host "Creating custom role '$INVOKER_TOGGLE_ROLE_ID' (run.services.getIamPolicy + setIamPolicy)..."
+gcloud iam roles create $INVOKER_TOGGLE_ROLE_ID `
+    --project $GCP_PROJECT_ID `
+    --title="Budget Killswitch Invoker Toggle" `
+    --description="Minimum permissions to read/write IAM policy on one Cloud Run service (toggle public access)." `
+    --permissions="run.services.getIamPolicy,run.services.setIamPolicy" `
+    --stage=GA
+
+if (-not $?) {
+    Write-Warning "Custom role create failed (may already exist) -- continuing."
+}
+
+Write-Host "Granting $INVOKER_TOGGLE_ROLE_ID on $BACKEND_SERVICE_NAME to $FUNCTION_SA_EMAIL..."
 gcloud run services add-iam-policy-binding $BACKEND_SERVICE_NAME `
     --region $GCP_REGION `
     --member="serviceAccount:$FUNCTION_SA_EMAIL" `
-    --role="roles/run.developer" `
+    --role="projects/$GCP_PROJECT_ID/roles/$INVOKER_TOGGLE_ROLE_ID" `
     --project $GCP_PROJECT_ID
 
 if (-not $?) {
@@ -61,14 +81,34 @@ gcloud functions deploy $FUNCTION_NAME `
     --no-allow-unauthenticated `
     --project $GCP_PROJECT_ID
 
-if ($?) {
-    Write-Host "Killswitch function deployed."
-    Write-Host ""
-    Write-Host "MANUAL STEP STILL REQUIRED (no gcloud/API surface for this):"
-    Write-Host "  GCP Billing console -> Budgets & alerts -> the `$5 budget -> Manage notifications"
-    Write-Host "  -> Connect a Pub/Sub topic -> $TOPIC_NAME"
-    Write-Host "  See infra/SETUP-GCP.md#billing-killswitch."
-} else {
+if (-not $?) {
     Write-Error "Cloud Function deployment failed"
     exit 1
 }
+
+# 4. Grant the trigger's service account permission to invoke the function's OWN
+# backing Cloud Run service. This is separate from the invoker-toggle grant on
+# dnd-session-backend above (step 2) -- that lets the function's code flip that
+# service's IAM policy; this lets Eventarc's Pub/Sub push subscription invoke the
+# function in the first place. Without it, every trigger delivery fails with
+# "The request was not authenticated ... lacks {run.routes.invoke} permission"
+# and Pub/Sub retries (briefly -- the trigger's retry policy is not indefinite)
+# without the function ever running.
+Write-Host "Granting run.invoker on $FUNCTION_NAME (its own backing service) to $FUNCTION_SA_EMAIL..."
+gcloud run services add-iam-policy-binding $FUNCTION_NAME `
+    --region $GCP_REGION `
+    --member="serviceAccount:$FUNCTION_SA_EMAIL" `
+    --role="roles/run.invoker" `
+    --project $GCP_PROJECT_ID
+
+if (-not $?) {
+    Write-Error "run.invoker binding on the function's own service failed"
+    exit 1
+}
+
+Write-Host "Killswitch function deployed."
+Write-Host ""
+Write-Host "MANUAL STEP STILL REQUIRED (no gcloud/API surface for this):"
+Write-Host "  GCP Billing console -> Budgets & alerts -> the `$5 budget -> Manage notifications"
+Write-Host "  -> Connect a Pub/Sub topic -> $TOPIC_NAME"
+Write-Host "  See infra/SETUP-GCP.md#billing-killswitch."

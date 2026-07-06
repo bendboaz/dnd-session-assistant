@@ -212,9 +212,18 @@ gcloud alpha monitoring policies list --project=$PROJECT_ID --format="table(disp
 ## 11. Billing Killswitch
 
 A programmatic backstop on top of `--max-instances=2`: if spend crosses 90% of the $5
-budget, a Cloud Function forces Cloud Run to `--max-instances=0` (no new requests; no new
-compute spend; existing Firestore/Secret Manager data stays reachable for investigation).
-See `infra/OPERATIONS.md` for how to detect it firing, verify no data loss, and recover.
+budget, a Cloud Function revokes `dnd-session-backend`'s public (`allUsers`)
+`roles/run.invoker` binding. Cloud Run then rejects new requests with 403 before any
+instance starts — no new compute spend — while existing Firestore/Secret Manager data
+stays reachable for investigation. See `infra/OPERATIONS.md` for how to detect it firing,
+verify no data loss, and recover.
+
+**Why revoke invoker access rather than set `--max-instances=0`:** an earlier version of
+this feature tried the scaling route and it silently did the opposite of what's intended
+— per [Google's docs](https://docs.cloud.google.com/run/docs/configuring/max-instances),
+service-level `max-instances=0` means "no cap" (unlimited), not "stopped." Revoking the
+public invoker binding is also operationally simpler: it's a pure IAM policy change (no
+new revision), so it applies instantly and needs a much narrower permission (see below).
 
 **Manual step (console only — GCP Billing has no gcloud/API surface for connecting a
 budget to a Pub/Sub topic as of this writing):** run `infra/killswitch.ps1` first so the
@@ -232,15 +241,25 @@ account, and deploys the `budget-killswitch` Cloud Function (`infra/killswitch/m
 `--trigger-topic budget-alert --runtime python312 --region europe-west1`) subscribed to
 that topic.
 
-**IAM requirement:** the function's runtime service account needs `run.services.update` on
-`dnd-session-backend`. The script grants this via `roles/run.developer`, scoped to that one
-service with `gcloud run services add-iam-policy-binding` — deliberately not a
-project-level `roles/run.admin` grant, so a compromised function can't touch anything else.
+**IAM requirement:** the function's runtime service account needs to read and write IAM
+policy on `dnd-session-backend`. No predefined role grants only that (`roles/run.admin`
+also allows deleting/reconfiguring the service), so the script creates a **custom role**
+(`budgetKillswitchInvokerToggle`, permissions `run.services.getIamPolicy` +
+`run.services.setIamPolicy`) and binds it scoped to that one service with
+`gcloud run services add-iam-policy-binding` — deliberately not project-wide, so a
+compromised function can't touch anything else, including this service's own scaling or
+revisions.
 
 **Verification (safe — publishes a mock message, does not touch real budget/billing):**
 ```powershell
 $payload = @{ costAmount = 4.6; budgetAmount = 5.0; budgetDisplayName = "test" } | ConvertTo-Json -Compress
-gcloud pubsub topics publish budget-alert --message $payload --project $PROJECT_ID
-# Within ~60s, dnd-session-backend should show max-instances=0:
-gcloud run services describe dnd-session-backend --region=$REGION --project=$PROJECT_ID | Select-String maxScale
+# PowerShell strips embedded double quotes when passing args to a native exe like gcloud --
+# escape them first, or the JSON arrives corrupted (missing quotes) and fails to decode.
+$escaped = $payload -replace '"', '\"'
+gcloud pubsub topics publish budget-alert --message $escaped --project $PROJECT_ID
+# Within ~60s, dnd-session-backend's allUsers/run.invoker binding should be gone, and
+# hitting its URL should return 403 instead of a normal response:
+gcloud run services get-iam-policy dnd-session-backend --region=$REGION --project=$PROJECT_ID
+$URL = gcloud run services describe dnd-session-backend --region=$REGION --project=$PROJECT_ID --format="value(status.url)"
+Invoke-RestMethod "$URL/api/health"   # -> 403 once the killswitch has fired
 ```

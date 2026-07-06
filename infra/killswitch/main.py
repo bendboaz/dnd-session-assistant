@@ -2,11 +2,21 @@
 
 Triggered by GCP budget alerts published to the `budget-alert` Pub/Sub topic (the
 budget -> topic link is a manual console step -- see infra/SETUP-GCP.md#billing-killswitch).
-When spend crosses the action threshold, this scales `dnd-session-backend` on Cloud Run
-to `--max-instances=0`. That stops new requests (and therefore new compute spend) while
-leaving Firestore/Secret Manager reachable so a human can investigate without racing the
-meter. This is the softer of the two options the originating issue considered; disabling
-project billing entirely ("nuclear") is intentionally not implemented here.
+When spend crosses the action threshold, this revokes `allUsers`' `roles/run.invoker`
+binding on `dnd-session-backend`, so Cloud Run rejects new requests with 403 before any
+instance starts (no new compute spend) while leaving Firestore/Secret Manager reachable
+so a human can investigate without racing the meter. This is the softer of the two
+options the originating issue considered; disabling project billing entirely ("nuclear")
+is intentionally not implemented here.
+
+Earlier versions of this function tried to achieve the same goal via
+`service.template.scaling.max_instance_count = 0` (Cloud Run Admin API). That does NOT
+work: per https://docs.cloud.google.com/run/docs/configuring/max-instances,
+service-level `max-instances=0` means "no cap" (unlimited), not "stopped" -- confirmed
+live, where it silently *removed* the instance ceiling instead of applying one. Revoking
+public invoker access is also simpler operationally: it's a pure IAM policy change (no
+new revision), so it applies instantly and needs only
+`run.services.{get,set}IamPolicy` -- see the custom role in infra/killswitch.ps1.
 
 Budget alert message shape (published by GCP Billing -- see
 https://cloud.google.com/billing/docs/how-to/budgets-programmatic-notifications):
@@ -83,13 +93,13 @@ def budget_killswitch(cloud_event: CloudEvent) -> None:
         return
 
     logger.warning(
-        "Cost %.2f >= %.0f%% of budget %.2f -- scaling %s to max-instances=0.",
+        "Cost %.2f >= %.0f%% of budget %.2f -- revoking public access to %s.",
         cost_amount,
         ACTION_FRACTION * 100,
         budget_amount,
         BACKEND_SERVICE_NAME,
     )
-    _scale_to_zero()
+    _revoke_public_invoker()
 
 
 def _decode_pubsub_message(cloud_event: CloudEvent) -> dict[str, Any] | None:
@@ -112,19 +122,33 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def _scale_to_zero() -> None:
-    """Sets Cloud Run `--max-instances=0` via the Admin API (run.services.update).
+def _revoke_public_invoker() -> None:
+    """Revokes `allUsers`' `roles/run.invoker` binding on `BACKEND_SERVICE_NAME`.
 
-    Requires the function's runtime service account to hold `run.services.update` on
-    `BACKEND_SERVICE_NAME` -- granted narrowly (not project-wide run.admin) by
-    infra/killswitch.ps1. See infra/OPERATIONS.md for the recovery path.
+    This is a pure IAM policy change -- no new revision is created, so it applies
+    instantly and needs only `run.services.getIamPolicy` / `run.services.setIamPolicy`
+    (granted via the custom role in infra/killswitch.ps1, not project-wide `run.admin`).
+    Recovery (re-granting the binding) is a manual human step -- see
+    infra/OPERATIONS.md -- this function only ever removes access, never restores it.
     """
     client = run_v2.ServicesClient()
     service_path = client.service_path(GCP_PROJECT_ID, GCP_REGION, BACKEND_SERVICE_NAME)
 
-    service = client.get_service(name=service_path)
-    service.template.scaling.max_instance_count = 0
+    policy = client.get_iam_policy(request={"resource": service_path})
 
-    operation = client.update_service(service=service)
-    operation.result()  # block until the new revision (max-instances=0) is live
-    logger.warning("%s max-instances set to 0.", BACKEND_SERVICE_NAME)
+    revoked = False
+    for binding in policy.bindings:
+        if binding.role == "roles/run.invoker" and "allUsers" in binding.members:
+            binding.members.remove("allUsers")
+            revoked = True
+
+    if not revoked:
+        logger.warning(
+            "%s had no allUsers/run.invoker binding to revoke -- already blocked, "
+            "or was never public.",
+            BACKEND_SERVICE_NAME,
+        )
+        return
+
+    client.set_iam_policy(request={"resource": service_path, "policy": policy})
+    logger.warning("Revoked public (allUsers) invoker access on %s.", BACKEND_SERVICE_NAME)

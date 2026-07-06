@@ -13,33 +13,36 @@ for the implementation).
   ```powershell
   gcloud functions logs read budget-killswitch --region=europe-west1 --project=dnd-session-assistant-52633 --limit=50
   ```
-  A `max-instances set to 0` warning confirms the killswitch acted (as opposed to the
-  alert firing below the 90% action threshold, which it logs but does not act on).
-- **Cloud Run state:**
+  A `Revoked public (allUsers) invoker access` warning confirms the killswitch acted (as
+  opposed to the alert firing below the 90% action threshold, which it logs but does not
+  act on).
+- **Cloud Run IAM policy:**
   ```powershell
-  gcloud run services describe dnd-session-backend --region=europe-west1 --project=dnd-session-assistant-52633 | Select-String maxScale
+  gcloud run services get-iam-policy dnd-session-backend --region=europe-west1 --project=dnd-session-assistant-52633
   ```
-  `maxScale: '0'` means the killswitch is currently engaged.
-- **User-visible symptom:** in-flight requests finish normally, but once existing
-  instances drain, new requests to `/api/*` start failing (no instance can start). The
-  frontend itself (Firebase Hosting) is unaffected — only backend API calls fail.
+  No `allUsers` member on the `roles/run.invoker` binding (or the binding missing
+  entirely) means the killswitch is currently engaged.
+- **User-visible symptom:** requests to `/api/*` start failing with **403** immediately
+  (this is an authorization check at Cloud Run's front end, so it applies to the very
+  next request — there's no "existing instances drain first" delay). The frontend itself
+  (Firebase Hosting) is unaffected — only backend API calls fail.
 
 ### 2. Verify no data loss
 
-The killswitch only calls the Cloud Run Admin API to change `max-instances`; it never
-touches Firestore, Secret Manager, or the deployed container image/revision. To confirm:
+The killswitch only revokes an IAM policy binding; it never touches Firestore, Secret
+Manager, or the deployed container image/revision/scaling config. To confirm:
 
 - Firestore data is untouched — spot-check the most recent session documents in the
-  Firebase console; nothing about scaling to zero can delete or corrupt them.
-- Secret Manager access is untouched — secrets remain readable (Cloud Run being scaled
-  to zero doesn't revoke any IAM bindings).
-- The Cloud Run **revision** is unchanged; only its instance ceiling is. No redeploy or
-  rollback is needed to restore service — see step 4.
+  Firebase console; nothing about an IAM policy change can delete or corrupt them.
+- Secret Manager access is untouched — secrets remain readable (this only affects who
+  can invoke `dnd-session-backend`, not the backend's own access to other services).
+- The Cloud Run **revision** and its scaling config are unchanged; only the invoker
+  policy is. No redeploy or rollback is needed to restore service — see step 4.
 
 ### 3. Find and fix the root cause before restoring capacity
 
-Restoring `--max-instances=2` without understanding why spend spiked just re-arms the
-same failure. Before step 4:
+Re-granting public invoker access without understanding why spend spiked just re-arms
+the same failure. Before step 4:
 
 - **GCP Billing → Reports**, broken down by SKU and time, to find what actually drove the
   cost (Cloud Run compute, Cloud Build, network egress, an STT provider key used outside
@@ -59,17 +62,18 @@ same failure. Before step 4:
 $GCP_PROJECT_ID = "dnd-session-assistant-52633"
 $GCP_REGION = "europe-west1"
 
-gcloud run services update dnd-session-backend `
-    --max-instances 2 `
+gcloud run services add-iam-policy-binding dnd-session-backend `
     --region $GCP_REGION `
+    --member="allUsers" `
+    --role="roles/run.invoker" `
     --project $GCP_PROJECT_ID
 ```
 
 Confirm and smoke-test:
 
 ```powershell
-gcloud run services describe dnd-session-backend --region=$GCP_REGION --project=$GCP_PROJECT_ID | Select-String maxScale
-# -> maxScale: '2'
+gcloud run services get-iam-policy dnd-session-backend --region=$GCP_REGION --project=$GCP_PROJECT_ID
+# -> allUsers back on the roles/run.invoker binding
 
 $URL = gcloud run services describe dnd-session-backend --region=$GCP_REGION --project=$GCP_PROJECT_ID --format="value(status.url)"
 Invoke-RestMethod "$URL/api/health"   # -> { status = ok }
@@ -93,7 +97,7 @@ next event; the budget alert in the console doesn't need to be reset or re-trigg
   `infra/killswitch/main.py` via env vars set at deploy time
   (`infra/killswitch.ps1 --set-env-vars`). Changing them requires redeploying the
   function, not a live config edit.
-- Only the softer "scale Cloud Run to zero" response is implemented. Disabling billing
+- Only the softer "block new traffic" response is implemented. Disabling billing
   on the project entirely (the "nuclear" option raised in the originating issue) is
   intentionally not built — it would also cut off the ability to investigate via
   Firestore/Secret Manager, which defeats the point of having a recovery runbook at all.
