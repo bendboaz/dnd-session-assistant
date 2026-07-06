@@ -4,7 +4,7 @@
   "installationId": "140736715",
   "appBotLogin": "bendboaz-claude-code-agents[bot]",
   "branchPrefix": "claude/agent/issue-",
-  "defaultCap": 1,
+  "defaultCap": 4,
   "agentOpsPath": ".agent-ops",
   "stateDir": ".claude/agent-state",
   "labels": {
