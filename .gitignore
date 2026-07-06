@@ -30,8 +30,12 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Local Claude Code tooling (preview launch configs, etc.)
-.claude/
+# Local Claude Code tooling (preview launch configs, agent-state, machine-local settings) —
+# except the tracked settings.json that enables the agent-ops plugin for every checkout.
+# Must be `.claude/*` (not `.claude/`): git never descends into an excluded directory, so a
+# re-include under `.claude/` would be a no-op.
+.claude/*
+!.claude/settings.json
 
 # Agent-ops plugin — machine-specific config (never commit)
 .agent-ops/config.local.json
