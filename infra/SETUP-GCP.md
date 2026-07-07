@@ -154,3 +154,112 @@ gcloud secrets list --project=$PROJECT_ID
 
 The `/api/stt-token` call returning 401 without a Firebase ID token is the auth gate
 working as intended.
+
+## 10. Monitoring & Alerting
+
+`infra/monitoring.ps1` creates one email notification channel and three Cloud Monitoring
+alert policies for `dnd-session-backend`, so failures are surfaced instead of discovered
+mid-session. Requires the `alpha`/`beta` gcloud components:
+
+```powershell
+gcloud components install alpha beta
+```
+
+Set `$env:ALERT_EMAIL` (project owner's address) before running, so the address never needs
+to be hard-coded and committed to this public repo:
+
+```powershell
+$env:ALERT_EMAIL = "you@example.com"
+.\infra\monitoring.ps1
+```
+
+It creates:
+
+1. **Storage fallback (log-based)** — fires when `backend/storage.py` logs a Firestore
+   fallback warning (ADC failure, ineligible credentials, Firestore outage/quota). Matches
+   both `jsonPayload.message` and `textPayload`, since the backend currently logs via plain
+   `logging.basicConfig` (text, not structured JSON) — see the script comments for the exact
+   log lines matched.
+2. **Error rate** — `run.googleapis.com/request_count` filtered to `response_code_class=5xx`,
+   threshold >5 requests/min sustained for 2 consecutive minutes.
+3. **Latency (lower priority)** — `run.googleapis.com/request_latencies` p95 > 2000ms for
+   5 consecutive minutes. **Known limitation:** Cloud Run's built-in latency metric has no
+   per-route label, so this alerts on the whole service's p95, not `/api/stt-token`
+   specifically — see the script's comments for the caveat and a possible log-based-metric
+   follow-up.
+
+The script is **not idempotent** — re-running it creates new channel/policy resources rather
+than updating existing ones. See the "Cleanup" comment block at the bottom of the script for
+the list/delete commands to tear down and re-run cleanly.
+
+### Verification
+
+After running the script, confirm end-to-end delivery manually (this can't be automated from
+a sandboxed environment without live GCP credentials):
+
+```powershell
+# Storage-fallback alert: deliberately misconfigure Firestore access (e.g. revoke the
+# runtime SA's Firestore role, or point GCP_PROJECT at a project without a Firestore DB),
+# hit any endpoint that touches storage, and confirm an email arrives within ~5 minutes.
+
+# Error-rate alert: drive a burst of 5xx responses (e.g. loop a request against a route
+# that errors, or restart with a broken secret so auth/storage calls fail) and confirm an
+# email arrives within ~5 minutes.
+
+gcloud alpha monitoring policies list --project=$PROJECT_ID --format="table(displayName,enabled)"
+```
+
+## 11. Billing Killswitch
+
+A programmatic backstop on top of `--max-instances=2`: if spend crosses 90% of the $5
+budget, a Cloud Function revokes `dnd-session-backend`'s public (`allUsers`)
+`roles/run.invoker` binding. Cloud Run then rejects new requests with 403 before any
+instance starts — no new compute spend — while existing Firestore/Secret Manager data
+stays reachable for investigation. See `infra/OPERATIONS.md` for how to detect it firing,
+verify no data loss, and recover.
+
+**Why revoke invoker access rather than set `--max-instances=0`:** an earlier version of
+this feature tried the scaling route and it silently did the opposite of what's intended
+— per [Google's docs](https://docs.cloud.google.com/run/docs/configuring/max-instances),
+service-level `max-instances=0` means "no cap" (unlimited), not "stopped." Revoking the
+public invoker binding is also operationally simpler: it's a pure IAM policy change (no
+new revision), so it applies instantly and needs a much narrower permission (see below).
+
+**Manual step (console only — GCP Billing has no gcloud/API surface for connecting a
+budget to a Pub/Sub topic as of this writing):** run `infra/killswitch.ps1` first so the
+`budget-alert` topic exists, then in the GCP Billing console go to **Budgets & alerts** →
+select the $5 budget → **Manage notifications** → **Connect a Pub/Sub topic** →
+`budget-alert`.
+
+**Automated (PowerShell):**
+```powershell
+.\infra\killswitch.ps1
+```
+
+This creates the `budget-alert` Pub/Sub topic, a dedicated `budget-killswitch-fn` service
+account, and deploys the `budget-killswitch` Cloud Function (`infra/killswitch/main.py`,
+`--trigger-topic budget-alert --runtime python312 --region europe-west1`) subscribed to
+that topic.
+
+**IAM requirement:** the function's runtime service account needs to read and write IAM
+policy on `dnd-session-backend`. No predefined role grants only that (`roles/run.admin`
+also allows deleting/reconfiguring the service), so the script creates a **custom role**
+(`budgetKillswitchInvokerToggle`, permissions `run.services.getIamPolicy` +
+`run.services.setIamPolicy`) and binds it scoped to that one service with
+`gcloud run services add-iam-policy-binding` — deliberately not project-wide, so a
+compromised function can't touch anything else, including this service's own scaling or
+revisions.
+
+**Verification (safe — publishes a mock message, does not touch real budget/billing):**
+```powershell
+$payload = @{ costAmount = 4.6; budgetAmount = 5.0; budgetDisplayName = "test" } | ConvertTo-Json -Compress
+# PowerShell strips embedded double quotes when passing args to a native exe like gcloud --
+# escape them first, or the JSON arrives corrupted (missing quotes) and fails to decode.
+$escaped = $payload -replace '"', '\"'
+gcloud pubsub topics publish budget-alert --message $escaped --project $PROJECT_ID
+# Within ~60s, dnd-session-backend's allUsers/run.invoker binding should be gone, and
+# hitting its URL should return 403 instead of a normal response:
+gcloud run services get-iam-policy dnd-session-backend --region=$REGION --project=$PROJECT_ID
+$URL = gcloud run services describe dnd-session-backend --region=$REGION --project=$PROJECT_ID --format="value(status.url)"
+Invoke-RestMethod "$URL/api/health"   # -> 403 once the killswitch has fired
+```

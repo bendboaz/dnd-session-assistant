@@ -58,6 +58,26 @@ class TestNearMissGating:
 
 
 # ---------------------------------------------------------------------------
+# Request validation: 422 on structurally invalid bodies
+# ---------------------------------------------------------------------------
+
+class TestNearMissValidation:
+    def test_returns_422_for_malformed_body(self, client) -> None:
+        # Pydantic validates the request body before the handler runs, so a
+        # structurally invalid entry (missing the required "context" field)
+        # must be rejected with 422 regardless of ENABLE_DATA_COLLECTION.
+        session_id = _post_session(client)
+        resp = client.post(
+            f"/api/sessions/{session_id}/near-misses",
+            json={"near_misses": [{"token": "firebolt", "ts": 1000}]},
+        )
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert isinstance(detail, list)
+        assert any(err.get("loc", [])[-1] == "context" for err in detail)
+
+
+# ---------------------------------------------------------------------------
 # Endpoint with data collection enabled
 # ---------------------------------------------------------------------------
 
