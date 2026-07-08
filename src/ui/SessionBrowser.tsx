@@ -80,7 +80,9 @@ export function SessionBrowser({ onClose, onOpenSession }: SessionBrowserProps) 
         </div>
 
         {sessions !== null && sessions !== 'error' && sessions.length > 0 && (
-          <ul className="flex flex-col gap-2 px-3 py-3">
+          // role="list" explicit: some screen readers drop list semantics on
+          // a <ul> once Tailwind's reset removes its default list-style.
+          <ul role="list" className="flex flex-col gap-2 px-3 py-3">
             {sessions.map((s) => (
               <li key={s.id}>
                 <button
