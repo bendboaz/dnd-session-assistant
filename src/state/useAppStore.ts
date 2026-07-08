@@ -312,6 +312,8 @@ export function useAppStore(): AppStore {
     const stt = sttRef.current
     sttRef.current = null
     if (stt) await stt.stop()
+    // Safe no-op if no lock is held (e.g. unsupported browser, or STT never
+    // started) — called unconditionally rather than tracking lock state here.
     void releaseWakeLock()
     setSttState('stopped')
   }, [])
@@ -371,6 +373,10 @@ export function useAppStore(): AppStore {
   // The Wake Lock API auto-releases when the tab loses visibility (e.g. phone
   // screen locked, app backgrounded); re-acquire it if we're still listening
   // once the tab regains focus.
+  // Re-registering the listener on every sttState change (rather than reading
+  // it from a ref) is intentional: it keeps the closure's sttState always
+  // current, trading a bit of listener churn for not having to reason about
+  // ref staleness.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && sttState === 'listening') {
