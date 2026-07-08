@@ -59,7 +59,7 @@ export function SessionBrowser({ onClose, onOpenSession }: SessionBrowserProps) 
         {/* aria-live scoped to the status messages only, not the populated list
             below — so screen readers announce a state transition once, rather
             than re-announcing every row on unrelated re-renders. */}
-        <div aria-live="polite">
+        <div role="status" aria-live="polite">
           {sessions === null && (
             <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
               Loading…

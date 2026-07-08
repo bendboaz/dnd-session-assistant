@@ -62,6 +62,8 @@ export function locateDetections(text: string, detections: Detection[]): Highlig
   let cursor = 0
 
   for (const detection of detections) {
+    // filter(Boolean) is deliberately forgiving of extra/doubled spaces in
+    // matchedText, not just a guard for a fully-empty string.
     const words = detection.matchedText.split(' ').filter(Boolean)
     if (words.length === 0) continue
 

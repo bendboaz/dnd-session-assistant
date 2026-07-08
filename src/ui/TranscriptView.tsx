@@ -113,7 +113,7 @@ export function TranscriptView({
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {/* aria-live scoped to the status messages only, not the populated
             transcript below — see the identical note in SessionBrowser. */}
-        <div aria-live="polite">
+        <div role="status" aria-live="polite">
           {rendered === 'error' && (
             <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
               Couldn't load this transcript. Check your connection and try again.
