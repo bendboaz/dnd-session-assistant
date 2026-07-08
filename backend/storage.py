@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from config import gcp_project, local_storage_dir
-from models import CreateSessionRequest, NearMiss, Segment
+from models import CreateSessionRequest, NearMiss, Segment, SessionSummary
 
 logger = logging.getLogger("dnd.storage")
 
@@ -47,6 +47,12 @@ class Storage:
     async def append_near_misses(
         self, session_id: str, near_misses: list[NearMiss]
     ) -> int:  # pragma: no cover
+        raise NotImplementedError
+
+    async def list_sessions(self) -> list[SessionSummary]:  # pragma: no cover
+        raise NotImplementedError
+
+    async def get_transcript(self, session_id: str) -> list[Segment]:  # pragma: no cover
         raise NotImplementedError
 
 
@@ -97,6 +103,45 @@ class FirestoreStorage(Storage):
         session_ref.update({"nearMissCount": firestore.Increment(len(near_misses))})
         return len(near_misses)
 
+    async def list_sessions(self) -> list[SessionSummary]:
+        from google.cloud import firestore  # local import; only needed here
+
+        # Synchronous Firestore call inline (same accepted tradeoff as
+        # create_session/append_segments above): a browse click is a rare,
+        # user-initiated action, not a hot path, so the blocking .stream() call
+        # is a non-issue at this app's scale.
+        docs = (
+            self._db.collection("sessions")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .stream()
+        )
+        sessions = []
+        for doc in docs:
+            data = doc.to_dict() or {}
+            sessions.append(
+                SessionSummary(
+                    id=doc.id,
+                    title=data.get("title"),
+                    startedAt=data.get("startedAt"),
+                    segmentCount=data.get("segmentCount", 0),
+                )
+            )
+        return sessions
+
+    async def get_transcript(self, session_id: str) -> list[Segment]:
+        # Synchronous Firestore call inline; see list_sessions above.
+        session_ref = self._db.collection("sessions").document(session_id)
+        docs = session_ref.collection("transcript").order_by("ts").stream()
+        segments = []
+        for doc in docs:
+            data = doc.to_dict()
+            # A tombstoned/deleted document streams back with to_dict() == None;
+            # Segment has no field defaults, so skip it rather than crash.
+            if data is None:
+                continue
+            segments.append(Segment(**data))
+        return segments
+
 
 class LocalStorage(Storage):
     backend = "local-jsonl"
@@ -141,6 +186,58 @@ class LocalStorage(Storage):
             for nm in near_misses:
                 fh.write(json.dumps(nm.model_dump(), ensure_ascii=False) + "\n")
         return len(near_misses)
+
+    async def list_sessions(self) -> list[SessionSummary]:
+        # (createdAt, summary) pairs so we can sort newest-first without adding
+        # createdAt to the public SessionSummary shape.
+        #
+        # Segment counting re-reads each session's transcript.jsonl in full on
+        # every call (O(total transcript size), not cached) — acceptable for
+        # local-dev's scale (a handful of sessions), not something to carry into
+        # a high-traffic deployment.
+        entries: list[tuple[str, SessionSummary]] = []
+        for sdir in self._root.iterdir():
+            if not sdir.is_dir():
+                continue
+            meta_path = sdir / "session.json"
+            if not meta_path.exists():
+                continue
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+            transcript_path = sdir / "transcript.jsonl"
+            segment_count = 0
+            if transcript_path.exists():
+                with transcript_path.open("r", encoding="utf-8") as fh:
+                    segment_count = sum(1 for line in fh if line.strip())
+
+            summary = SessionSummary(
+                # create_session always writes "id" into session.json; the
+                # sdir.name fallback only matters for a directory that was
+                # hand-created (e.g. a manual dev fixture) rather than through
+                # the normal API.
+                id=meta.get("id", sdir.name),
+                title=meta.get("title"),
+                startedAt=meta.get("startedAt"),
+                segmentCount=segment_count,
+            )
+            entries.append((meta.get("createdAt", ""), summary))
+
+        entries.sort(key=lambda e: e[0], reverse=True)
+        return [summary for _, summary in entries]
+
+    async def get_transcript(self, session_id: str) -> list[Segment]:
+        path = self._session_dir(session_id) / "transcript.jsonl"
+        if not path.exists():
+            return []
+        segments = []
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                raw = line.strip()
+                if not raw:
+                    continue
+                segments.append(Segment(**json.loads(raw)))
+        segments.sort(key=lambda s: s.ts)
+        return segments
 
 
 def init_storage() -> Storage:

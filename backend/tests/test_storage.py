@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -90,6 +91,106 @@ class TestTranscriptAppend:
         )
         lines = (tmp_storage / session_id / "transcript.jsonl").read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 3
+
+
+# ---------------------------------------------------------------------------
+# Session listing (LocalStorage)
+# ---------------------------------------------------------------------------
+
+class TestListSessions:
+    def test_empty_when_no_sessions(self, client) -> None:
+        resp = client.get("/api/sessions")
+        assert resp.status_code == 200
+        assert resp.json()["sessions"] == []
+
+    def test_lists_created_sessions_with_metadata(self, client) -> None:
+        session_id = client.post("/api/sessions", json={"title": "Campaign night 1"}).json()["id"]
+        client.post(
+            f"/api/sessions/{session_id}/transcript",
+            json={"segments": [{"text": "one", "ts": 1}, {"text": "two", "ts": 2}]},
+        )
+
+        resp = client.get("/api/sessions")
+        assert resp.status_code == 200
+        sessions = resp.json()["sessions"]
+        assert len(sessions) == 1
+        assert sessions[0]["id"] == session_id
+        assert sessions[0]["title"] == "Campaign night 1"
+        assert sessions[0]["segmentCount"] == 2
+
+    def test_lists_a_session_with_no_transcript_as_zero_segments(self, client) -> None:
+        session_id = client.post("/api/sessions", json={"title": "Just started"}).json()["id"]
+
+        resp = client.get("/api/sessions")
+        sessions = resp.json()["sessions"]
+        assert len(sessions) == 1
+        assert sessions[0]["id"] == session_id
+        assert sessions[0]["segmentCount"] == 0
+
+    def test_skips_a_directory_missing_session_json(self, client, tmp_storage: Path) -> None:
+        session_id = client.post("/api/sessions", json={"title": "Real session"}).json()["id"]
+        # A directory with no session.json -- e.g. a partially-written or
+        # corrupted session -- must be skipped, not raise.
+        (tmp_storage / "not-a-real-session").mkdir()
+
+        resp = client.get("/api/sessions")
+        assert resp.status_code == 200
+        sessions = resp.json()["sessions"]
+        assert len(sessions) == 1
+        assert sessions[0]["id"] == session_id
+
+    def test_newest_session_listed_first(self, client) -> None:
+        first_id = client.post("/api/sessions", json={"title": "First"}).json()["id"]
+        # createdAt is wall-clock (see _now_iso); without a gap, two requests this
+        # close together can land in the same clock tick and make the sort order
+        # (and this assertion) flaky.
+        time.sleep(0.01)
+        second_id = client.post("/api/sessions", json={"title": "Second"}).json()["id"]
+
+        sessions = client.get("/api/sessions").json()["sessions"]
+        ids = [s["id"] for s in sessions]
+        # Both sessions must be present, with the most-recently-created first.
+        assert ids.index(second_id) < ids.index(first_id)
+
+
+# ---------------------------------------------------------------------------
+# Transcript retrieval (LocalStorage)
+# ---------------------------------------------------------------------------
+
+class TestGetTranscript:
+    def test_empty_when_no_segments(self, client) -> None:
+        session_id = client.post("/api/sessions", json={}).json()["id"]
+        resp = client.get(f"/api/sessions/{session_id}/transcript")
+        assert resp.status_code == 200
+        assert resp.json()["segments"] == []
+
+    def test_empty_for_unknown_session(self, client) -> None:
+        # Deliberately 200 + [], not 404: the browser only ever passes session
+        # ids it just got from GET /api/sessions, so "unknown id" in practice
+        # means a session was deleted between listing and opening it — treating
+        # that the same as "no transcript yet" keeps the client's empty-state
+        # rendering the single code path instead of a special-cased 404 branch.
+        resp = client.get("/api/sessions/does-not-exist/transcript")
+        assert resp.status_code == 200
+        assert resp.json()["segments"] == []
+
+    def test_returns_segments_in_timestamp_order(self, client) -> None:
+        session_id = client.post("/api/sessions", json={}).json()["id"]
+        # Post out of order; the response must still come back sorted by ts.
+        client.post(
+            f"/api/sessions/{session_id}/transcript",
+            json={"segments": [{"text": "third", "ts": 300}]},
+        )
+        client.post(
+            f"/api/sessions/{session_id}/transcript",
+            json={"segments": [{"text": "first", "ts": 100}, {"text": "second", "ts": 200}]},
+        )
+
+        resp = client.get(f"/api/sessions/{session_id}/transcript")
+        assert resp.status_code == 200
+        segments = resp.json()["segments"]
+        assert [s["text"] for s in segments] == ["first", "second", "third"]
+        assert [s["ts"] for s in segments] == [100, 200, 300]
 
 
 # ---------------------------------------------------------------------------
