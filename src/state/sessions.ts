@@ -40,7 +40,7 @@ export async function fetchSessions(): Promise<SessionSummary[] | 'error'> {
       headers: { ...(await authHeaders()) },
     })
     if (res.status === 401) {
-      handle401()
+      handle401() // deliberately [] not 'error' here — see the doc comment above
       return []
     }
     if (!res.ok) throw new Error(`status ${res.status}`)
@@ -65,7 +65,7 @@ export async function fetchTranscript(
       { headers: { ...(await authHeaders()) } },
     )
     if (res.status === 401) {
-      handle401()
+      handle401() // deliberately [] not 'error' here — see fetchSessions' doc comment
       return []
     }
     if (!res.ok) throw new Error(`status ${res.status}`)
