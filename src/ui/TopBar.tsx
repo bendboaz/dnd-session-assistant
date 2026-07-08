@@ -103,7 +103,7 @@ export function TopBar({
             type="button"
             onClick={onOpenHistory}
             title="Browse past sessions"
-            className="rounded-lg border px-3 py-1.5 text-xs font-medium text-[var(--color-ink-dim)] active:bg-[var(--color-surface-2)]"
+            className="min-h-[44px] rounded-lg border px-3 py-1.5 text-xs font-medium text-[var(--color-ink-dim)] active:bg-[var(--color-surface-2)]"
             style={{ borderColor: 'var(--color-border)' }}
           >
             Past sessions
@@ -112,7 +112,7 @@ export function TopBar({
             type="button"
             onClick={() => setConfirming(true)}
             title="End this session and start fresh next time"
-            className="rounded-lg border border-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent)] active:bg-[var(--color-surface-2)]"
+            className="min-h-[44px] rounded-lg border border-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent)] active:bg-[var(--color-surface-2)]"
           >
             End session
           </button>

@@ -9,6 +9,13 @@
 // non-overlapping, since scan() consumes tokens in order) matching each one's
 // normalized words against a contiguous run of raw tokens starting after the
 // previous detection's end.
+//
+// The regex below is a case-insensitive duplicate of lib/text.ts's latinTokens
+// pattern (that file is a frozen contract — see CLAUDE.md — so it isn't
+// exported for reuse here). If latinTokens' word-boundary rules ever change,
+// this must change to match, or detections silently stop lining up with the
+// raw text; transcriptHighlight.test.ts's "token boundaries" test cross-checks
+// the two against each other as a tripwire for that drift.
 
 import { normalize } from '../lib/text'
 import type { Detection } from '../matching/types'
@@ -19,13 +26,15 @@ export interface HighlightRange {
   detection: Detection
 }
 
-interface RawToken {
+/** One raw (un-normalized) Latin token and its character span in the original text. */
+export interface RawToken {
   start: number
   end: number
   norm: string
 }
 
-function rawTokensWithSpans(text: string): RawToken[] {
+/** Exported only so tests can cross-check its tokenization against latinTokens. */
+export function rawTokensWithSpans(text: string): RawToken[] {
   const tokens: RawToken[] = []
   const re = /[a-zA-Z][a-zA-Z'’]*/g
   let m: RegExpExecArray | null

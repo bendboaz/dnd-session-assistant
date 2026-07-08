@@ -13,6 +13,7 @@ import type { CompendiumEntry } from '../compendium/types'
 import { createScanner } from '../matching'
 import { fetchTranscript } from '../state/sessions'
 import type { SessionSummary, StoredSegment } from '../state/sessions'
+import { formatStartedAt } from './formatDate'
 import { kindMeta } from './kind'
 import { locateDetections } from './transcriptHighlight'
 import type { HighlightRange } from './transcriptHighlight'
@@ -28,13 +29,6 @@ interface RenderedSegment {
   key: string
   text: string
   ranges: HighlightRange[]
-}
-
-function formatStartedAt(iso: string | null): string {
-  if (!iso) return 'Unknown date'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return 'Unknown date'
-  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 export function TranscriptView({
@@ -147,12 +141,12 @@ function renderSegment(
 
   const nodes: ReactNode[] = []
   let cursor = 0
-  seg.ranges.forEach((r, idx) => {
+  seg.ranges.forEach((r) => {
     if (r.start > cursor) nodes.push(seg.text.slice(cursor, r.start))
     const colorVar = kindMeta(r.detection.entry.kind).colorVar
     nodes.push(
       <button
-        key={idx}
+        key={r.start}
         type="button"
         onClick={() => onSelectEntry(r.detection.entry)}
         className="inline rounded px-0.5 font-semibold underline decoration-2 underline-offset-2"

@@ -8,17 +8,11 @@
 import { useEffect, useState } from 'react'
 import { fetchSessions } from '../state/sessions'
 import type { SessionSummary } from '../state/sessions'
+import { formatStartedAt } from './formatDate'
 
 interface SessionBrowserProps {
   onClose: () => void
   onOpenSession: (session: SessionSummary) => void
-}
-
-function formatStartedAt(iso: string | null): string {
-  if (!iso) return 'Unknown date'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return 'Unknown date'
-  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 export function SessionBrowser({ onClose, onOpenSession }: SessionBrowserProps) {

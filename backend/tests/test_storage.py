@@ -139,6 +139,11 @@ class TestGetTranscript:
         assert resp.json()["segments"] == []
 
     def test_empty_for_unknown_session(self, client) -> None:
+        # Deliberately 200 + [], not 404: the browser only ever passes session
+        # ids it just got from GET /api/sessions, so "unknown id" in practice
+        # means a session was deleted between listing and opening it — treating
+        # that the same as "no transcript yet" keeps the client's empty-state
+        # rendering the single code path instead of a special-cased 404 branch.
         resp = client.get("/api/sessions/does-not-exist/transcript")
         assert resp.status_code == 200
         assert resp.json()["segments"] == []

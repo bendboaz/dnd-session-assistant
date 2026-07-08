@@ -106,6 +106,10 @@ class FirestoreStorage(Storage):
     async def list_sessions(self) -> list[SessionSummary]:
         from google.cloud import firestore  # local import; only needed here
 
+        # Synchronous Firestore call inline (same accepted tradeoff as
+        # create_session/append_segments above): a browse click is a rare,
+        # user-initiated action, not a hot path, so the blocking .stream() call
+        # is a non-issue at this app's scale.
         docs = (
             self._db.collection("sessions")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
@@ -125,9 +129,18 @@ class FirestoreStorage(Storage):
         return sessions
 
     async def get_transcript(self, session_id: str) -> list[Segment]:
+        # Synchronous Firestore call inline; see list_sessions above.
         session_ref = self._db.collection("sessions").document(session_id)
         docs = session_ref.collection("transcript").order_by("ts").stream()
-        return [Segment(**doc.to_dict()) for doc in docs]
+        segments = []
+        for doc in docs:
+            data = doc.to_dict()
+            # A tombstoned/deleted document streams back with to_dict() == None;
+            # Segment has no field defaults, so skip it rather than crash.
+            if data is None:
+                continue
+            segments.append(Segment(**data))
+        return segments
 
 
 class LocalStorage(Storage):
@@ -177,6 +190,11 @@ class LocalStorage(Storage):
     async def list_sessions(self) -> list[SessionSummary]:
         # (createdAt, summary) pairs so we can sort newest-first without adding
         # createdAt to the public SessionSummary shape.
+        #
+        # Segment counting re-reads each session's transcript.jsonl in full on
+        # every call (O(total transcript size), not cached) — acceptable for
+        # local-dev's scale (a handful of sessions), not something to carry into
+        # a high-traffic deployment.
         entries: list[tuple[str, SessionSummary]] = []
         for sdir in self._root.iterdir():
             if not sdir.is_dir():

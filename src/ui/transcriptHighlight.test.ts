@@ -2,7 +2,8 @@
 // back onto character ranges in the original (un-normalized) transcript text.
 
 import { describe, expect, it } from 'vitest'
-import { locateDetections } from './transcriptHighlight'
+import { locateDetections, rawTokensWithSpans } from './transcriptHighlight'
+import { latinTokens } from '../lib/text'
 import type { Detection } from '../matching/types'
 import type { CompendiumEntry } from '../compendium/types'
 
@@ -89,5 +90,39 @@ describe('locateDetections', () => {
 
   it('returns [] for no detections', () => {
     expect(locateDetections('some text', [])).toEqual([])
+  })
+
+  it('locates two detections that sit back-to-back with no gap between them', () => {
+    const fireBolt = fakeEntry('srd:spell:fire-bolt', 'Fire Bolt')
+    const shield = fakeEntry('srd:spell:shield-spell', 'Shield spell')
+    const text = 'fire bolt shield spell'
+    const ranges = locateDetections(text, [
+      det(fireBolt, 'fire bolt'),
+      det(shield, 'shield spell'),
+    ])
+
+    expect(ranges).toHaveLength(2)
+    expect(text.slice(ranges[0].start, ranges[0].end)).toBe('fire bolt')
+    expect(text.slice(ranges[1].start, ranges[1].end)).toBe('shield spell')
+    // No off-by-one in the cursor advance: the second range must start exactly
+    // where the first ends (only the separating space between them).
+    expect(ranges[1].start).toBe(ranges[0].end + 1)
+  })
+})
+
+describe('rawTokensWithSpans', () => {
+  // Regression guard for the module-comment's stated risk: this file's token
+  // regex is a hand-duplicated copy of lib/text.ts's latinTokens (a frozen
+  // contract file, so it can't be changed to export the pattern for reuse). If
+  // the two ever diverge, detections would silently stop lining up with the
+  // raw text — this test cross-checks their tokenization stays identical.
+  it.each([
+    'I cast Fireball at the goblins',
+    "she casts Tasha's Hideous Laughter",
+    'a beholder, a mimic; and a lich!',
+    'no spells were cast here',
+    '',
+  ])('tokenizes the same words as latinTokens for %j', (text) => {
+    expect(rawTokensWithSpans(text).map((t) => t.norm)).toEqual(latinTokens(text))
   })
 })
