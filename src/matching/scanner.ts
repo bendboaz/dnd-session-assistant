@@ -364,7 +364,12 @@ export function createScanner(
   // window, so two overlapping Hebrew windows (e.g. a curated 2-word alias and
   // a single-token phonetic fallback) can't both fire against the same
   // token(s) within one pass — only the per-entry `emit` cooldown needs to
-  // guard across passes/utterances, not within this loop.
+  // guard across passes/utterances, not within this loop. That guard is not
+  // purely time-based: `scanLatin` and `scanHebrew` share the same `now` from
+  // one `scan()` call, so an entry detected by both passes in the same
+  // utterance (e.g. "fireball" said in English and Hebraized in the same
+  // sentence) is deduped immediately (`now - last === 0 < cooldownMs`) — the
+  // same code path that also decays detections across separate utterances.
   function scanHebrew(text: string, now: number, detections: Detection[]): void {
     const tokens = hebrewTokens(text)
 
