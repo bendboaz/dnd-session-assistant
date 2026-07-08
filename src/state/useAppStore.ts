@@ -22,6 +22,7 @@ import { DEFAULT_KEYTERM_CANDIDATES } from '../stt/defaultKeyterms'
 import { buildKeyterms } from '../stt/keyterms'
 import { createSession, postTranscript, postNearMisses } from './transcript'
 import { latinTokens } from '../lib/text'
+import { acquireWakeLock, releaseWakeLock } from '../lib/wakeLock'
 
 /** A detection plus a feed-local id so React keys stay stable across re-renders. */
 export interface FeedItem extends Detection {
@@ -283,6 +284,9 @@ export function useAppStore(): AppStore {
     if (!compendium) return
     const stt = createProvider(provider)
     sttRef.current = stt
+    // Best-effort: keep the screen awake while listening. No-op on browsers
+    // without Wake Lock support (e.g. iOS Safari).
+    void acquireWakeLock()
     // Seed keyterms: pinned names first (priority), then the common-term defaults.
     stt.setKeyterms(buildKeyterms(pinnedNamesRef.current, defaultKeytermsRef.current))
 
@@ -308,6 +312,7 @@ export function useAppStore(): AppStore {
     const stt = sttRef.current
     sttRef.current = null
     if (stt) await stt.stop()
+    void releaseWakeLock()
     setSttState('stopped')
   }, [])
 
@@ -363,10 +368,24 @@ export function useAppStore(): AppStore {
     })
   }, [])
 
-  // Stop the mic when the app unmounts.
+  // The Wake Lock API auto-releases when the tab loses visibility (e.g. phone
+  // screen locked, app backgrounded); re-acquire it if we're still listening
+  // once the tab regains focus.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && sttState === 'listening') {
+        void acquireWakeLock()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [sttState])
+
+  // Stop the mic and release the wake lock when the app unmounts.
   useEffect(() => {
     return () => {
       void sttRef.current?.stop()
+      void releaseWakeLock()
     }
   }, [])
 
