@@ -314,12 +314,14 @@ describe('createScanner — real SRD: English in Hebrew', () => {
     expect(names).toContain('Goblin')
   })
 
-  it('does NOT detect anything from a purely Hebrew-script sentence', () => {
-    // Hebrew-script transliterations of game terms are NOT matched — this documents
-    // the current limitation until cross-script matching is implemented.
+  it('resolves a purely Hebrew-script sentence via cross-script matching (issue #3)', () => {
+    // "מטיל פיירבול" = "casting fireball", all Hebrew script. פיירבול is a
+    // curated Hebrew alias (hebrewAliases.ts) resolving to Fireball.
     const s = createScanner(compendium)
-    const d = s.scan('מטיל פיירבול') // "casting fireball" but all Hebrew
-    expect(d).toHaveLength(0)
+    const d = s.scan('מטיל פיירבול')
+    const fb = d.find((x) => x.entry.name === 'Fireball')
+    expect(fb).toBeDefined()
+    expect(fb!.method).toBe('exact')
   })
 
   it('detects multiple English terms scattered through Hebrew prose', () => {
@@ -328,6 +330,83 @@ describe('createScanner — real SRD: English in Hebrew', () => {
     const names = d.map((x) => x.entry.name)
     expect(names).toContain('Magic Missile')
     expect(names).toContain('Goblin')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cross-script (Hebrew -> entity) matching — issue #3.
+//
+// Both Soniox and Deepgram Hebraize un-seeded English game terms during
+// streaming (e.g. "fireball" -> פיירבול); this covers the curated Hebrew-alias
+// map (hebrewAliases.ts) and its integration through the scanner.
+// ---------------------------------------------------------------------------
+
+describe('createScanner — real SRD: Hebrew cross-script matching (issue #3)', () => {
+  let compendium: Compendium
+
+  beforeAll(async () => {
+    installSrdFetch()
+    const { loadCompendium } = await import('../compendium/loader')
+    compendium = await loadCompendium()
+  })
+
+  it('resolves "מטיל פיירבול" to Fireball (acceptance criterion)', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('מטיל פיירבול')
+    expect(d.map((x) => x.entry.name)).toContain('Fireball')
+  })
+
+  it('resolves a bare curated Hebrew alias "פיירבול" to Fireball', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('פיירבול')
+    const fb = d.find((x) => x.entry.name === 'Fireball')
+    expect(fb).toBeDefined()
+    expect(fb!.method).toBe('exact')
+  })
+
+  it('resolves the Hebrew-translated alias "כדור אש" to Fireball', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('הקוסם משגר כדור אש לעבר האויב')
+    expect(d.map((x) => x.entry.name)).toContain('Fireball')
+  })
+
+  it('resolves a curated Hebrew alias for Magic Missile', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('אני מטיל קסם טיל')
+    expect(d.map((x) => x.entry.name)).toContain('Magic Missile')
+  })
+
+  it('resolves a curated Hebrew alias for Fire Bolt', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('אני משתמש בניצוץ אש')
+    expect(d.map((x) => x.entry.name)).toContain('Fire Bolt')
+  })
+
+  it('all three representative Hebraized terms resolve (Fireball, Magic Missile, Fire Bolt)', () => {
+    const s = createScanner(compendium)
+    const d = s.scan('פיירבול, קסם טיל, ניצוץ אש')
+    const names = d.map((x) => x.entry.name)
+    expect(names).toContain('Fireball')
+    expect(names).toContain('Magic Missile')
+    expect(names).toContain('Fire Bolt')
+  })
+
+  it('the mixed-script regression "אז אני מטיל fireball על הgoblin" still resolves Fireball + Goblin', () => {
+    // Acceptance criterion: this existing regression must keep passing
+    // unchanged now that a Hebrew pass runs alongside the Latin one.
+    const s = createScanner(compendium)
+    const d = s.scan('אז אני מטיל fireball על הgoblin')
+    const names = d.map((x) => x.entry.name)
+    expect(names).toContain('Fireball')
+    expect(names).toContain('Goblin')
+  })
+
+  it('does not spam detections for ordinary Hebrew prose with no game terms', () => {
+    // Common Hebrew filler/verbs (stop-listed in hebrewText.ts) must not
+    // spuriously phonetic-match some unrelated SRD entry.
+    const s = createScanner(compendium)
+    const d = s.scan('אז אני חושב שאולי כדאי לנו לנוח קצת לפני שנמשיך הלאה')
+    expect(d).toHaveLength(0)
   })
 })
 

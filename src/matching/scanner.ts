@@ -1,12 +1,20 @@
 // Matching engine (WP-A).
 //
 // Turns a finalized transcript segment — mostly Hebrew with English game terms
-// dropped in ("...אז אני מטיל fireball...") — into `Detection[]`. We only ever
-// look at the Latin-script runs (`latinTokens`), because the SRD names are
-// English; Hebrew is ignored entirely.
+// dropped in ("...אז אני מטיל fireball...") — into `Detection[]` via two
+// independent passes:
+//   - Latin pass: matches the Latin-script runs (`latinTokens`) directly
+//     against the English SRD names.
+//   - Hebrew pass: both Soniox and Deepgram Hebraize un-seeded English terms
+//     during streaming (e.g. "fireball" -> פיירבול), so `latinTokens` alone
+//     misses them. `hebrewTokens` extracts the Hebrew-script runs, then each
+//     window is resolved via a curated Hebrew-alias map (`hebrewAliases.ts`)
+//     or, for uncurated single tokens, a bounded set of romanized Latin
+//     spellings (`hebrewText.ts`) phonetic-matched against the SRD index.
+// Both passes share the same tiered lookup and per-entry cooldown below.
 //
-// Algorithm: greedy, longest-n-gram-first window scan with a tiered lookup and a
-// per-entry cooldown.
+// Algorithm (each pass): greedy, longest-n-gram-first window scan with a
+// tiered lookup and a per-entry cooldown.
 //   1. Slide a window from `maxAliasWords` down to 1 word, anchored at the
 //      current token, and join the window's tokens with spaces.
 //   2. For each window try the cheapest/strictest tier first:
@@ -31,6 +39,14 @@ import type {
   ScannerOptions,
 } from './types'
 import { debugLog } from '../lib/logger'
+import { resolveHebrewAlias, HEBREW_MAX_ALIAS_WORDS } from './hebrewAliases'
+import {
+  hebrewTokens,
+  romanizeVariants,
+  stripHebrewPrefix,
+  HEBREW_STOP_WORDS,
+  MIN_HEBREW_TOKEN_LENGTH,
+} from './hebrewText'
 
 const DEFAULT_COOLDOWN_MS = 60_000
 const DEFAULT_MIN_CONFIDENCE = 0.6
@@ -41,6 +57,12 @@ const PHONETIC_CONFIDENCE = 0.75
 
 // How many top fuzzy candidates to corroborate before giving up on a window.
 const FUZZY_RANKS = 3
+
+// Widest Hebrew window we try, in tokens. The curated alias map's longest key
+// is a handful of words (e.g. "כדור אש"); the romanization fallback only ever
+// runs on single tokens (see `matchHebrewWindow`). `HEBREW_MAX_ALIAS_WORDS`
+// keeps this in sync with the curated map automatically.
+const HEBREW_MAX_WINDOW = Math.max(2, HEBREW_MAX_ALIAS_WORDS)
 
 // Stop-list guard against auto-detection spam.
 //
@@ -190,9 +212,120 @@ export function createScanner(
     return null
   }
 
-  function scan(text: string, now: number = Date.now()): Detection[] {
+  /**
+   * Resolve a Hebrew window against the curated alias map, also trying every
+   * token with its leading one-letter inseparable prefix stripped (ב-/ל-/ו-/
+   * ה-/מ-/כ-/ש-; see `stripHebrewPrefix`). Hebrew attaches these directly to
+   * the following word with no space, so e.g. "אני משתמש בניצוץ אש" tokenizes
+   * (via `hebrewTokens`) as "...", "בניצוץ", "אש" — the curated key "ניצוץ
+   * אש" never matches the raw window "בניצוץ אש" unless we also try the
+   * prefix-stripped form. The window is at most `HEBREW_MAX_ALIAS_WORDS`
+   * tokens (currently 2), so trying every combination of
+   * original/prefix-stripped per token is cheap and doesn't require guessing
+   * which token (if any) actually carries a prefix.
+   *
+   * `cartesian` below makes this O(2^tokens) — 4 combos today. That's fine
+   * only because `HEBREW_MAX_ALIAS_WORDS` stays small; `hebrewAliases.test.ts`
+   * pins it at exactly 2 so a longer curated key forces a conscious review of
+   * this cost instead of silently growing it. If the map ever needs a
+   * significantly longer key, prefer capping prefix-stripping to the first
+   * token instead of widening the cartesian product — Hebrew's inseparable
+   * prepositions attach to the head word of a construct phrase ("כדור אש"),
+   * not to later words, so later tokens shouldn't need a stripped variant.
+   */
+  function resolveCuratedAliasWithPrefixes(window: string[]): string | undefined {
+    const optionsPerToken = window.map((token) => {
+      const stripped = stripHebrewPrefix(token)
+      return stripped ? [token, stripped] : [token]
+    })
+    for (const combo of cartesian(optionsPerToken)) {
+      const alias = resolveHebrewAlias(combo.join(' '))
+      if (alias) return alias
+    }
+    return undefined
+  }
+
+  /**
+   * Try to match a window of Hebrew tokens starting at `start`. Two
+   * independent mechanisms, tried in order:
+   *   1. Curated alias map (`hebrewAliases.ts`) — deterministic, for common
+   *      high-value terms where naive romanization is too ambiguous to trust.
+   *      A hit resolves through `compendium.exact()`, so it's exact-tier
+   *      confidence.
+   *   2. Romanization + phonetic fallback — single Hebrew tokens only (a
+   *      Hebraized English game term is normally written as one Hebrew word),
+   *      long enough to not be an ultra-common function word/verb, expanded
+   *      into plausible Latin spellings and phonetic-matched against the SRD
+   *      name index. This is the "long tail beyond the curated map" path.
+   */
+  function matchHebrewWindow(tokens: string[], start: number, width: number): Match | null {
+    const window = tokens.slice(start, start + width)
+    if (window.length < width) return null
+    const phrase = window.join(' ')
+
+    const curatedAlias = resolveCuratedAliasWithPrefixes(window)
+    if (curatedAlias) {
+      const exact = compendium.exact(curatedAlias)
+      if (exact.length > 0) {
+        return { entries: exact, method: 'exact', confidence: 1.0, consumed: width, matchedText: phrase }
+      }
+    }
+
+    // Deliberately no fuzzy-style corroboration here (contrast Tier 3 in
+    // `matchWindow`): this mirrors Tier 2 (phonetic) above, which also returns
+    // on the first non-empty hit uncorroborated. `compendium.phonetic` is a
+    // stricter lookup than `compendium.search` (exact metaphone-code match,
+    // not similarity ranking), so it doesn't need the "always returns
+    // something" corroboration guard fuzzy search does. False-positive risk
+    // from trying multiple romanized variants is instead bounded up front by
+    // `MIN_HEBREW_TOKEN_LENGTH` and `HEBREW_STOP_WORDS`, which is why both are
+    // gated here rather than corroborating after the fact.
+    if (width === 1 && phrase.length >= MIN_HEBREW_TOKEN_LENGTH && !HEBREW_STOP_WORDS.has(phrase)) {
+      for (const variant of romanizeVariants(phrase)) {
+        const hits = compendium.phonetic(variant)
+        if (hits.length > 0) {
+          return { entries: hits, method: 'phonetic', confidence: PHONETIC_CONFIDENCE, consumed: width, matchedText: phrase }
+        }
+      }
+    }
+
+    return null
+  }
+
+  /** Emit detections for a resolved match, honoring the per-entry cooldown. */
+  function emit(matched: Match, now: number, detections: Detection[]): void {
+    for (const entry of matched.entries) {
+      const last = lastEmit.get(entry.id)
+      if (last !== undefined && now - last < cooldownMs) {
+        debugLog('scan:cooldown', {
+          entry: entry.id,
+          matchedText: matched.matchedText,
+          suppressedUntil: last + cooldownMs,
+        })
+        continue
+      }
+      lastEmit.set(entry.id, now)
+      debugLog('scan:detection', {
+        entry: entry.id,
+        name: entry.name,
+        matchedText: matched.matchedText,
+        method: matched.method,
+        confidence: matched.confidence,
+      })
+      detections.push({
+        entry,
+        matchedText: matched.matchedText,
+        method: matched.method,
+        confidence: matched.confidence,
+        ts: now,
+      })
+    }
+  }
+
+  // Latin-script pass: mostly-Hebrew transcript with English game terms
+  // dropped in, matched by `latinTokens`.
+  function scanLatin(text: string, now: number, detections: Detection[]): void {
     const tokens = latinTokens(text)
-    const detections: Detection[] = []
 
     let i = 0
     while (i < tokens.length) {
@@ -218,36 +351,59 @@ export function createScanner(
         continue
       }
 
-      for (const entry of matched.entries) {
-        const last = lastEmit.get(entry.id)
-        if (last !== undefined && now - last < cooldownMs) {
-          debugLog('scan:cooldown', {
-            entry: entry.id,
-            matchedText: matched.matchedText,
-            suppressedUntil: last + cooldownMs,
-          })
-          continue
-        }
-        lastEmit.set(entry.id, now)
-        debugLog('scan:detection', {
-          entry: entry.id,
-          name: entry.name,
-          matchedText: matched.matchedText,
-          method: matched.method,
-          confidence: matched.confidence,
-        })
-        detections.push({
-          entry,
-          matchedText: matched.matchedText,
-          method: matched.method,
-          confidence: matched.confidence,
-          ts: now,
-        })
-      }
-
+      emit(matched, now, detections)
       i += matched.consumed
     }
+  }
 
+  // Hebrew-script pass: Hebraized English game terms (e.g. "fireball" ->
+  // פיירבול), which `latinTokens` never sees. See `matchHebrewWindow`.
+  //
+  // Like the Latin pass, `i += matched.consumed` (below) always advances past
+  // every token a match's window covered before the loop tries the next
+  // window, so two overlapping Hebrew windows (e.g. a curated 2-word alias and
+  // a single-token phonetic fallback) can't both fire against the same
+  // token(s) within one pass — only the per-entry `emit` cooldown needs to
+  // guard across passes/utterances, not within this loop. That guard is not
+  // purely time-based: `scanLatin` and `scanHebrew` share the same `now` from
+  // one `scan()` call, so an entry detected by both passes in the same
+  // utterance (e.g. "fireball" said in English and Hebraized in the same
+  // sentence) is deduped immediately (`now - last === 0 < cooldownMs`) — the
+  // same code path that also decays detections across separate utterances.
+  function scanHebrew(text: string, now: number, detections: Detection[]): void {
+    const tokens = hebrewTokens(text)
+
+    let i = 0
+    while (i < tokens.length) {
+      let matched: Match | null = null
+      const maxWidth = Math.min(HEBREW_MAX_WINDOW, tokens.length - i)
+      for (let width = maxWidth; width >= 1; width--) {
+        matched = matchHebrewWindow(tokens, i, width)
+        debugLog('scan:hebrew-candidate', {
+          candidate: tokens.slice(i, i + width).join(' '),
+          width,
+          matched: matched !== null,
+          method: matched?.method ?? null,
+          confidence: matched?.confidence ?? null,
+        })
+        if (matched) break
+      }
+
+      if (!matched) {
+        debugLog('scan:hebrew-miss', { token: tokens[i], position: i })
+        i += 1
+        continue
+      }
+
+      emit(matched, now, detections)
+      i += matched.consumed
+    }
+  }
+
+  function scan(text: string, now: number = Date.now()): Detection[] {
+    const detections: Detection[] = []
+    scanLatin(text, now, detections)
+    scanHebrew(text, now, detections)
     return detections
   }
 
@@ -260,4 +416,17 @@ export function createScanner(
 
 function firstNonEmpty(a: CompendiumEntry[], b: CompendiumEntry[]): CompendiumEntry[] {
   return a.length > 0 ? a : b
+}
+
+/**
+ * Cartesian product of per-position option lists, e.g.
+ * `[['a'], ['b','c']] -> [['a','b'], ['a','c']]`. Each position's first option
+ * is preserved first in the output order, so the very first combo yielded is
+ * always the "everything unstripped" original.
+ */
+function cartesian(optionsPerPosition: string[][]): string[][] {
+  return optionsPerPosition.reduce<string[][]>(
+    (acc, options) => acc.flatMap((prefix) => options.map((opt) => [...prefix, opt])),
+    [[]],
+  )
 }
