@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -119,6 +120,10 @@ class TestListSessions:
 
     def test_newest_session_listed_first(self, client) -> None:
         first_id = client.post("/api/sessions", json={"title": "First"}).json()["id"]
+        # createdAt is wall-clock (see _now_iso); without a gap, two requests this
+        # close together can land in the same clock tick and make the sort order
+        # (and this assertion) flaky.
+        time.sleep(0.01)
         second_id = client.post("/api/sessions", json={"title": "Second"}).json()["id"]
 
         sessions = client.get("/api/sessions").json()["sessions"]

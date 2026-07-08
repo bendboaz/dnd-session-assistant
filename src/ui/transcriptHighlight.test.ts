@@ -120,6 +120,7 @@ describe('rawTokensWithSpans', () => {
     'I cast Fireball at the goblins',
     "she casts Tasha's Hideous Laughter",
     'a beholder, a mimic; and a lich!',
+    'a half-elf ranger draws her longbow', // neither regex includes '-', so both split into "half", "elf"
     'no spells were cast here',
     '',
   ])('tokenizes the same words as latinTokens for %j', (text) => {
