@@ -1,6 +1,9 @@
 // Full-screen overlay listing past sessions in reverse-chronological order —
 // the entry point into the browsing flow (issue #34). Fetches from
 // GET /api/sessions once on open; tapping a row hands off to the transcript view.
+//
+// z-40: stays mounted underneath TranscriptView (z-45) while a session is open,
+// so the transcript's back button returns to this list instead of the mic feed.
 
 import { useEffect, useState } from 'react'
 import { fetchSessions } from '../state/sessions'
@@ -8,7 +11,7 @@ import type { SessionSummary } from '../state/sessions'
 
 interface SessionBrowserProps {
   onClose: () => void
-  onOpenSession: (sessionId: string) => void
+  onOpenSession: (session: SessionSummary) => void
 }
 
 function formatStartedAt(iso: string | null): string {
@@ -77,7 +80,7 @@ export function SessionBrowser({ onClose, onOpenSession }: SessionBrowserProps) 
               <li key={s.id}>
                 <button
                   type="button"
-                  onClick={() => onOpenSession(s.id)}
+                  onClick={() => onOpenSession(s)}
                   className="flex min-h-[56px] w-full flex-col items-start gap-1 rounded-xl border bg-[var(--color-surface)] px-4 py-3 text-left active:bg-[var(--color-surface-2)]"
                   style={{ borderColor: 'var(--color-border)' }}
                 >

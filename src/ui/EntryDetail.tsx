@@ -1,6 +1,10 @@
 // Bottom-sheet overlay hosting a stat block. Slides up over the feed (not a
 // full-screen takeover) so dismissing returns straight to the table view.
 // Header carries the name, kind badge and the pin toggle.
+//
+// z-50 is deliberately the highest layer in the app: this sheet can be opened
+// from the feed, the pinned bar, search, *or* from within SessionBrowser
+// (z-40) / TranscriptView (z-45), so it must always paint above them.
 
 import { useEffect } from 'react'
 import type { CompendiumEntry } from '../compendium/types'
@@ -27,7 +31,7 @@ export function EntryDetail({ entry, pinned, onTogglePin, onClose }: EntryDetail
 
   return (
     <div
-      className="fixed inset-0 z-40 flex flex-col justify-end bg-black/60"
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60"
       onClick={onClose}
     >
       <div
