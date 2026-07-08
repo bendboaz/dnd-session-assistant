@@ -37,7 +37,7 @@ export function TranscriptView({
   onClose,
   onSelectEntry,
 }: TranscriptViewProps) {
-  const [segments, setSegments] = useState<StoredSegment[] | null>(null)
+  const [segments, setSegments] = useState<StoredSegment[] | 'error' | null>(null)
 
   // A scanner scoped to this view: fresh cooldown state per session opened, so
   // browsing one past session can't suppress detections in another. Scanning
@@ -64,17 +64,26 @@ export function TranscriptView({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const rendered = useMemo<RenderedSegment[] | null>(() => {
-    if (!segments) return null
+  // scanner.reset() is a side effect (mutates the scanner's cooldown state), so
+  // this recomputation lives in an effect + state rather than useMemo, which
+  // must stay pure.
+  const [rendered, setRendered] = useState<RenderedSegment[] | null>(null)
+  useEffect(() => {
+    if (!segments || segments === 'error') {
+      setRendered(null)
+      return
+    }
     scanner.reset()
-    return segments.map((seg, i) => {
-      const detections = scanner.scan(seg.text, seg.ts)
-      return {
-        key: `${seg.ts}-${i}`,
-        text: seg.text,
-        ranges: locateDetections(seg.text, detections),
-      }
-    })
+    setRendered(
+      segments.map((seg, i) => {
+        const detections = scanner.scan(seg.text, seg.ts)
+        return {
+          key: `${seg.ts}-${i}`,
+          text: seg.text,
+          ranges: locateDetections(seg.text, detections),
+        }
+      }),
+    )
   }, [segments, scanner])
 
   return (
@@ -87,7 +96,7 @@ export function TranscriptView({
           type="button"
           onClick={onClose}
           aria-label="Back to sessions"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-[var(--color-ink-dim)] active:scale-95"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-[var(--color-ink-dim)] active:scale-95"
           style={{ borderColor: 'var(--color-border)' }}
         >
           ←
@@ -103,9 +112,15 @@ export function TranscriptView({
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {rendered === null && (
+        {segments === null && (
           <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
             Loading…
+          </p>
+        )}
+
+        {segments === 'error' && (
+          <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
+            Couldn't load this transcript. Check your connection and try again.
           </p>
         )}
 

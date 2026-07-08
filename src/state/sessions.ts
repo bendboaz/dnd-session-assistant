@@ -27,11 +27,14 @@ export interface StoredSegment {
 }
 
 /**
- * List all past sessions, newest first (server-sorted). Returns [] on any
- * failure (backend absent, network error, non-2xx) — the browser UI treats
- * that the same as "no sessions yet" rather than surfacing an error state.
+ * List all past sessions, newest first (server-sorted).
+ *
+ * Returns `'error'` for a genuine failure (network error, non-2xx, bad JSON) so
+ * the UI can tell "couldn't load" apart from "loaded, no sessions yet". A 401
+ * still resolves to `[]`: handle401() signs the user out, and SignInGate takes
+ * over almost immediately, so there's no meaningful "error" state to show for it.
  */
-export async function fetchSessions(): Promise<SessionSummary[]> {
+export async function fetchSessions(): Promise<SessionSummary[] | 'error'> {
   try {
     const res = await fetch(`${API_BASE}/api/sessions`, {
       headers: { ...(await authHeaders()) },
@@ -45,15 +48,17 @@ export async function fetchSessions(): Promise<SessionSummary[]> {
     return body.sessions
   } catch (err) {
     console.warn('[sessions] fetchSessions failed (backend absent?)', err)
-    return []
+    return 'error'
   }
 }
 
 /**
- * Fetch every transcript segment for a session, in timestamp order. Returns []
- * on any failure, same rationale as fetchSessions above.
+ * Fetch every transcript segment for a session, in timestamp order. Same
+ * 'error'-vs-[] distinction as fetchSessions above, and the same rationale.
  */
-export async function fetchTranscript(sessionId: string): Promise<StoredSegment[]> {
+export async function fetchTranscript(
+  sessionId: string,
+): Promise<StoredSegment[] | 'error'> {
   try {
     const res = await fetch(
       `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/transcript`,
@@ -68,6 +73,6 @@ export async function fetchTranscript(sessionId: string): Promise<StoredSegment[
     return body.segments
   } catch (err) {
     console.warn('[sessions] fetchTranscript failed (backend absent?)', err)
-    return []
+    return 'error'
   }
 }

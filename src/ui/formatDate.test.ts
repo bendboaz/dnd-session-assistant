@@ -11,6 +11,6 @@ describe('formatStartedAt', () => {
   })
 
   it('formats a valid ISO timestamp', () => {
-    expect(formatStartedAt('2026-01-15T10:30:00Z')).not.toBe('Unknown date')
+    expect(formatStartedAt('2026-01-15T10:30:00Z')).toMatch(/2026/)
   })
 })

@@ -228,10 +228,10 @@ class LocalStorage(Storage):
         segments = []
         with path.open("r", encoding="utf-8") as fh:
             for line in fh:
-                line = line.strip()
-                if not line:
+                raw = line.strip()
+                if not raw:
                     continue
-                segments.append(Segment(**json.loads(line)))
+                segments.append(Segment(**json.loads(raw)))
         segments.sort(key=lambda s: s.ts)
         return segments
 

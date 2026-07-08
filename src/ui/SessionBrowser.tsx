@@ -16,7 +16,7 @@ interface SessionBrowserProps {
 }
 
 export function SessionBrowser({ onClose, onOpenSession }: SessionBrowserProps) {
-  const [sessions, setSessions] = useState<SessionSummary[] | null>(null)
+  const [sessions, setSessions] = useState<SessionSummary[] | 'error' | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -48,7 +48,7 @@ export function SessionBrowser({ onClose, onOpenSession }: SessionBrowserProps) 
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-[var(--color-ink-dim)] active:scale-95"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-[var(--color-ink-dim)] active:scale-95"
           style={{ borderColor: 'var(--color-border)' }}
         >
           ✕
@@ -62,13 +62,19 @@ export function SessionBrowser({ onClose, onOpenSession }: SessionBrowserProps) 
           </p>
         )}
 
-        {sessions !== null && sessions.length === 0 && (
+        {sessions === 'error' && (
+          <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
+            Couldn't load past sessions. Check your connection and try again.
+          </p>
+        )}
+
+        {sessions !== null && sessions !== 'error' && sessions.length === 0 && (
           <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
             No past sessions yet.
           </p>
         )}
 
-        {sessions !== null && sessions.length > 0 && (
+        {sessions !== null && sessions !== 'error' && sessions.length > 0 && (
           <ul className="flex flex-col gap-2 px-3 py-3">
             {sessions.map((s) => (
               <li key={s.id}>
