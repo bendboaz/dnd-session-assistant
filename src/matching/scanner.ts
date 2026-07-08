@@ -223,6 +223,15 @@ export function createScanner(
    * tokens (currently 2), so trying every combination of
    * original/prefix-stripped per token is cheap and doesn't require guessing
    * which token (if any) actually carries a prefix.
+   *
+   * `cartesian` below makes this O(2^tokens) — 4 combos today. That's fine
+   * only because `HEBREW_MAX_ALIAS_WORDS` stays small; `hebrewAliases.test.ts`
+   * pins it at exactly 2 so a longer curated key forces a conscious review of
+   * this cost instead of silently growing it. If the map ever needs a
+   * significantly longer key, prefer capping prefix-stripping to the first
+   * token instead of widening the cartesian product — Hebrew's inseparable
+   * prepositions attach to the head word of a construct phrase ("כדור אש"),
+   * not to later words, so later tokens shouldn't need a stripped variant.
    */
   function resolveCuratedAliasWithPrefixes(window: string[]): string | undefined {
     const optionsPerToken = window.map((token) => {

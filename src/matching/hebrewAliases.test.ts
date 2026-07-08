@@ -30,6 +30,10 @@ describe('resolveHebrewAlias', () => {
 
 describe('HEBREW_MAX_ALIAS_WORDS', () => {
   it('reflects the widest curated phrase (in words)', () => {
-    expect(HEBREW_MAX_ALIAS_WORDS).toBeGreaterThanOrEqual(2)
+    // Hardcoded, not derived from HEBREW_ALIAS_MAP: this is a tripwire so
+    // adding a longer curated key forces a conscious bump here, which is also
+    // the cue to revisit the cartesian-growth cost documented on
+    // `resolveCuratedAliasWithPrefixes` in scanner.ts.
+    expect(HEBREW_MAX_ALIAS_WORDS).toBe(2)
   })
 })
