@@ -211,6 +211,10 @@ class LocalStorage(Storage):
                     segment_count = sum(1 for line in fh if line.strip())
 
             summary = SessionSummary(
+                # create_session always writes "id" into session.json; the
+                # sdir.name fallback only matters for a directory that was
+                # hand-created (e.g. a manual dev fixture) rather than through
+                # the normal API.
                 id=meta.get("id", sdir.name),
                 title=meta.get("title"),
                 startedAt=meta.get("startedAt"),

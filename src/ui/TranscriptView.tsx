@@ -110,24 +110,28 @@ export function TranscriptView({
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
-        {rendered === 'error' && (
-          <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
-            Couldn't load this transcript. Check your connection and try again.
-          </p>
-        )}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {/* aria-live scoped to the status messages only, not the populated
+            transcript below — see the identical note in SessionBrowser. */}
+        <div aria-live="polite">
+          {rendered === 'error' && (
+            <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
+              Couldn't load this transcript. Check your connection and try again.
+            </p>
+          )}
 
-        {rendered === null && (
-          <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
-            Loading…
-          </p>
-        )}
+          {rendered === null && (
+            <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
+              Loading…
+            </p>
+          )}
 
-        {rendered !== null && rendered !== 'error' && rendered.length === 0 && (
-          <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
-            No transcript recorded for this session.
-          </p>
-        )}
+          {rendered !== null && rendered !== 'error' && rendered.length === 0 && (
+            <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
+              No transcript recorded for this session.
+            </p>
+          )}
+        </div>
 
         {rendered !== null && rendered !== 'error' && rendered.length > 0 && (
           <div className="flex flex-col gap-3">

@@ -127,6 +127,18 @@ class TestListSessions:
         assert sessions[0]["id"] == session_id
         assert sessions[0]["segmentCount"] == 0
 
+    def test_skips_a_directory_missing_session_json(self, client, tmp_storage: Path) -> None:
+        session_id = client.post("/api/sessions", json={"title": "Real session"}).json()["id"]
+        # A directory with no session.json -- e.g. a partially-written or
+        # corrupted session -- must be skipped, not raise.
+        (tmp_storage / "not-a-real-session").mkdir()
+
+        resp = client.get("/api/sessions")
+        assert resp.status_code == 200
+        sessions = resp.json()["sessions"]
+        assert len(sessions) == 1
+        assert sessions[0]["id"] == session_id
+
     def test_newest_session_listed_first(self, client) -> None:
         first_id = client.post("/api/sessions", json={"title": "First"}).json()["id"]
         # createdAt is wall-clock (see _now_iso); without a gap, two requests this

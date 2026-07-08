@@ -55,24 +55,29 @@ export function SessionBrowser({ onClose, onOpenSession }: SessionBrowserProps) 
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto" aria-live="polite">
-        {sessions === null && (
-          <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
-            Loading…
-          </p>
-        )}
+      <div className="flex-1 overflow-y-auto">
+        {/* aria-live scoped to the status messages only, not the populated list
+            below — so screen readers announce a state transition once, rather
+            than re-announcing every row on unrelated re-renders. */}
+        <div aria-live="polite">
+          {sessions === null && (
+            <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
+              Loading…
+            </p>
+          )}
 
-        {sessions === 'error' && (
-          <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
-            Couldn't load past sessions. Check your connection and try again.
-          </p>
-        )}
+          {sessions === 'error' && (
+            <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
+              Couldn't load past sessions. Check your connection and try again.
+            </p>
+          )}
 
-        {sessions !== null && sessions !== 'error' && sessions.length === 0 && (
-          <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
-            No past sessions yet.
-          </p>
-        )}
+          {sessions !== null && sessions !== 'error' && sessions.length === 0 && (
+            <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
+              No past sessions yet.
+            </p>
+          )}
+        </div>
 
         {sessions !== null && sessions !== 'error' && sessions.length > 0 && (
           <ul className="flex flex-col gap-2 px-3 py-3">

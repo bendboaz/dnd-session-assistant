@@ -36,6 +36,9 @@ export interface RawToken {
 /** Exported only so tests can cross-check its tokenization against latinTokens. */
 export function rawTokensWithSpans(text: string): RawToken[] {
   const tokens: RawToken[] = []
+  // Both apostrophe forms are intentional, matching latinTokens: U+0027
+  // (ASCII ') and U+2019 (curly '). Careful not to let an editor's
+  // smart-quote autocorrect collapse these to a single character.
   const re = /[a-zA-Z][a-zA-Z'’]*/g
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
