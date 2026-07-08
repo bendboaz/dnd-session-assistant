@@ -40,6 +40,9 @@ export function rawTokensWithSpans(text: string): RawToken[] {
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     const norm = normalize(m[0])
+    // The `if (norm)` guard is defensive, not reachable today: the regex's
+    // leading [a-zA-Z] guarantees every match starts with a letter that
+    // survives normalize(), so norm can't actually be empty here.
     if (norm) tokens.push({ start: m.index, end: m.index + m[0].length, norm })
   }
   return tokens

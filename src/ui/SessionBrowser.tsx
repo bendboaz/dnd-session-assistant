@@ -55,7 +55,7 @@ export function SessionBrowser({ onClose, onOpenSession }: SessionBrowserProps) 
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" aria-live="polite">
         {sessions === null && (
           <p className="px-6 py-12 text-center text-sm text-[var(--color-ink-dim)]">
             Loading…

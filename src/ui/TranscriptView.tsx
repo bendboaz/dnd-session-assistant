@@ -110,7 +110,7 @@ export function TranscriptView({
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
         {rendered === 'error' && (
           <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
             Couldn't load this transcript. Check your connection and try again.
