@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hebrewTokens, romanizeVariants, HEBREW_STOP_WORDS } from './hebrewText'
+import { hebrewTokens, romanizeVariants, stripHebrewPrefix, HEBREW_STOP_WORDS } from './hebrewText'
 
 describe('hebrewTokens', () => {
   it('extracts a single Hebrew word', () => {
@@ -56,6 +56,31 @@ describe('romanizeVariants', () => {
   it('drops silent alef/ayin placeholders in at least one variant', () => {
     const variants = romanizeVariants('אבא') // alef-bet-alef
     expect(variants.length).toBeGreaterThan(0)
+  })
+})
+
+describe('stripHebrewPrefix', () => {
+  it('strips a leading inseparable prefix when the remainder is long enough', () => {
+    // "ב" + "ניצוץ" (spark) -> "ניצוץ".
+    expect(stripHebrewPrefix('בניצוץ')).toBe('ניצוץ')
+  })
+
+  it('strips a prefix at the minimum remainder length (2 letters)', () => {
+    // "ו" + "גם" (and-also) -> "גם", exactly MIN_STRIPPED_WORD_LENGTH.
+    expect(stripHebrewPrefix('וגם')).toBe('גם')
+  })
+
+  it('returns undefined when the leading letter is not a prefix letter', () => {
+    expect(stripHebrewPrefix('פיירבול')).toBeUndefined()
+  })
+
+  it('returns undefined when the token is too short to strip', () => {
+    // "ב" + "א" is below MIN_STRIPPED_WORD_LENGTH once the prefix is removed.
+    expect(stripHebrewPrefix('בא')).toBeUndefined()
+  })
+
+  it('returns undefined for an empty token', () => {
+    expect(stripHebrewPrefix('')).toBeUndefined()
   })
 })
 

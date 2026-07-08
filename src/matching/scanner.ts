@@ -262,6 +262,15 @@ export function createScanner(
       }
     }
 
+    // Deliberately no fuzzy-style corroboration here (contrast Tier 3 in
+    // `matchWindow`): this mirrors Tier 2 (phonetic) above, which also returns
+    // on the first non-empty hit uncorroborated. `compendium.phonetic` is a
+    // stricter lookup than `compendium.search` (exact metaphone-code match,
+    // not similarity ranking), so it doesn't need the "always returns
+    // something" corroboration guard fuzzy search does. False-positive risk
+    // from trying multiple romanized variants is instead bounded up front by
+    // `MIN_HEBREW_TOKEN_LENGTH` and `HEBREW_STOP_WORDS`, which is why both are
+    // gated here rather than corroborating after the fact.
     if (width === 1 && phrase.length >= MIN_HEBREW_TOKEN_LENGTH && !HEBREW_STOP_WORDS.has(phrase)) {
       for (const variant of romanizeVariants(phrase)) {
         const hits = compendium.phonetic(variant)
@@ -340,6 +349,13 @@ export function createScanner(
 
   // Hebrew-script pass: Hebraized English game terms (e.g. "fireball" ->
   // פיירבול), which `latinTokens` never sees. See `matchHebrewWindow`.
+  //
+  // Like the Latin pass, `i += matched.consumed` (below) always advances past
+  // every token a match's window covered before the loop tries the next
+  // window, so two overlapping Hebrew windows (e.g. a curated 2-word alias and
+  // a single-token phonetic fallback) can't both fire against the same
+  // token(s) within one pass — only the per-entry `emit` cooldown needs to
+  // guard across passes/utterances, not within this loop.
   function scanHebrew(text: string, now: number, detections: Detection[]): void {
     const tokens = hebrewTokens(text)
 
