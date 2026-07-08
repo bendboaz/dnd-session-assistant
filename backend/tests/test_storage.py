@@ -118,6 +118,15 @@ class TestListSessions:
         assert sessions[0]["title"] == "Campaign night 1"
         assert sessions[0]["segmentCount"] == 2
 
+    def test_lists_a_session_with_no_transcript_as_zero_segments(self, client) -> None:
+        session_id = client.post("/api/sessions", json={"title": "Just started"}).json()["id"]
+
+        resp = client.get("/api/sessions")
+        sessions = resp.json()["sessions"]
+        assert len(sessions) == 1
+        assert sessions[0]["id"] == session_id
+        assert sessions[0]["segmentCount"] == 0
+
     def test_newest_session_listed_first(self, client) -> None:
         first_id = client.post("/api/sessions", json={"title": "First"}).json()["id"]
         # createdAt is wall-clock (see _now_iso); without a gap, two requests this

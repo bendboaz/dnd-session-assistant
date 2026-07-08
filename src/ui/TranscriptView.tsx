@@ -43,6 +43,9 @@ export function TranscriptView({
   // browsing one past session can't suppress detections in another. Scanning
   // segments in their stored chronological order with each segment's real `ts`
   // reproduces the same cooldown behavior the live scan would have applied.
+  // `scanner` already changes identity whenever `compendium` does (it's the
+  // useMemo's only dep), so listing `scanner` alone in the effect below is
+  // sufficient — `compendium` doesn't need to be repeated there.
   const scanner = useMemo(() => createScanner(compendium), [compendium])
 
   useEffect(() => {
@@ -112,15 +115,19 @@ export function TranscriptView({
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {segments === null && (
-          <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
-            Loading…
-          </p>
-        )}
-
         {segments === 'error' && (
           <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
             Couldn't load this transcript. Check your connection and try again.
+          </p>
+        )}
+
+        {/* `rendered` (not `segments`) drives the loading state: segments can
+            finish fetching a tick before the derived-render effect below runs,
+            and showing nothing in that window is a worse look than an extra
+            instant of "Loading…". */}
+        {segments !== 'error' && rendered === null && (
+          <p className="px-2 py-12 text-center text-sm text-[var(--color-ink-dim)]">
+            Loading…
           </p>
         )}
 
