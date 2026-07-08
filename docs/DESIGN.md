@@ -63,8 +63,9 @@ Greenfield project at `D:\Users\Boaz\CodeProjects\dnd-session-assistant`.
 
 ## Module map & contracts
 
-The seams between work packages are explicit TypeScript contracts. **Contract files are read-only**
-for feature work; changes go through this design doc + the orchestrator.
+The seams between modules are explicit TypeScript contracts (API seams, not frozen). Changing an
+exported type/signature here is an API change: call it out explicitly in the PR, update every
+dependent in the same PR, and keep `.agent-ops/REPO-FACTS.md` and this doc consistent with it.
 
 | Module | Files | Status |
 |--------|-------|--------|
@@ -78,16 +79,17 @@ for feature work; changes go through this design doc + the orchestrator.
 | UI | `src/App.tsx`, `src/ui/*`, app state wiring | ✅ done |
 | Backend | `backend/*` | ✅ done |
 
-> **Contract scope for the compendium loader:** the frozen contract is the **public `Compendium`
+> **Contract scope for the compendium loader:** the API seam is the **public `Compendium`
 > interface signature** (`loadCompendium()` return type, `exact`/`phonetic`/`search` method
 > signatures) and the `CompendiumEntry` + payload shapes in `src/compendium/types.ts`. The loader's
 > **internal implementation** — alias generation, index building, normalization helpers — may evolve
 > freely as long as those public types and signatures are unchanged. Adding new aliases (e.g. no-space
 > variants like "firebolt" alongside "fire bolt") is an internal detail that changes neither
-> `CompendiumEntry` nor the `Compendium` interface, and is therefore not a contract break. The other
-> contract files (`src/lib/text.ts`, `src/compendium/types.ts`, `src/matching/types.ts`,
-> `src/stt/types.ts`) remain fully read-only — any change to their exported types or signatures goes
-> through the orchestrator first.
+> `CompendiumEntry` nor the `Compendium` interface, and is therefore not an API change. The other
+> seam files (`src/lib/text.ts`, `src/compendium/types.ts`, `src/matching/types.ts`,
+> `src/stt/types.ts`) may also change, but any change to their exported types or signatures is an
+> API change: call it out explicitly in the PR, update every dependent in the same PR, and keep
+> `.agent-ops/REPO-FACTS.md` and this doc consistent with the change.
 
 ### Compendium (done — the shared data foundation)
 

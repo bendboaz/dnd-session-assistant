@@ -37,25 +37,26 @@ For backend changes, from `backend/`: `pip install -r requirements.txt pytest; p
 
 See the repo `CLAUDE.md` Conventions section and `docs/DESIGN.md`.
 
-## Contract files (frozen — escalate before touching)
+## Contract files (API seams — changeable, but call it out)
 
-### Fully frozen (no edits to exported types/signatures)
+These are no longer frozen. Agents may change them, but any change to an exported type/signature
+is an **API change**: call it out explicitly in the PR description, update every dependent in the
+same PR, and keep `.agent-ops/REPO-FACTS.md` and `docs/DESIGN.md` consistent with the change.
 
 - `src/lib/text.ts`
 - `src/compendium/types.ts`
 - `src/matching/types.ts`
 - `src/stt/types.ts`
 
-### Partially frozen
+### Partial seam
 
 **`src/compendium/loader.ts`** — only the **public `Compendium` interface signature**
 (`loadCompendium()` return type; `exact`/`phonetic`/`search` signatures) and `CompendiumEntry` +
-payload shapes are frozen. The loader's internal implementation (alias generation, index building,
-normalization helpers) may evolve freely.
+payload shapes are the API seam (same call-out rule applies to changes there). The loader's internal
+implementation (alias generation, index building, normalization helpers) may evolve freely with no
+callout needed.
 
 ### Carve-out
 
-Test files (`*.test.ts` and test-only helpers) are **not** contract-frozen and may be added or edited
-freely by any work package.
-
-Any change to a frozen type/signature goes through `docs/DESIGN.md` + the human first — escalate.
+Test files (`*.test.ts` and test-only helpers) are not seam-restricted and may be added or edited
+freely.

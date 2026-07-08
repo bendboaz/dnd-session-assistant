@@ -30,33 +30,27 @@ running a `.sh`). Key equivalents: `Get-ChildItem` not `ls`/`find`; `Select-Stri
 not `mkdir -p`. No `&&` chaining — use `;` or `if ($?) { ... }`. No `2>/dev/null` — use `2>$null`.
 Use Windows paths (`D:\Users\Boaz\CodeProjects\...`), never POSIX (`/mnt/d/...`).
 
-## Working agreement for parallel sessions
+## Development phase & working agreement
 
-This repo can be built by **multiple agents/sessions in parallel**, one per work package / task.
-To avoid collisions:
+The greenfield parallel build (work packages, contract-frozen seams, one agent per package) is
+**complete** — the app is built and deployed (GCP, auto-deploy on push to `main`). The repo is now
+in **feature-addition and maintenance** mode:
 
-1. **Claim exactly one work package.** Work only inside that package's **owned files** (listed in the
-   task brief). Do not edit another package's files.
-2. **Contract files are READ-ONLY.** These define the seams between packages — keep them frozen:
-   `src/lib/text.ts`, `src/compendium/types.ts`, `src/matching/types.ts`, `src/stt/types.ts`.
-   For `src/compendium/loader.ts` specifically: the frozen contract is the **public `Compendium`
-   interface signature** (`loadCompendium()` return type, `exact`/`phonetic`/`search` method
-   signatures) and the `CompendiumEntry` + payload shapes in `types.ts`. The loader's **internal
-   implementation** — alias generation, index building, normalization helpers — may evolve freely as
-   long as those public types and signatures are unchanged. Changes to the public interface or to any
-   of the other contract files above must go through the orchestrator / `docs/DESIGN.md` first —
-   don't fork them in a feature branch.
-
-   **Carve-out — test files are NOT contract-frozen.** The contract covers only the listed source
-   files above plus the public `Compendium` interface signature. New test files (`*.test.ts`) and
-   other test-only helpers may be added under any directory — including `src/compendium/`,
-   `src/matching/`, `src/stt/`, or a shared `src/test/` — without going through the orchestrator.
-   Test files are owned by whichever work package writes them and may be edited freely.
-3. **Work on your assigned git branch / worktree** (see the task brief). Don't commit to `main`.
-4. **Develop against contracts, not other packages.** If you need another package that isn't built
-   yet, use a local fake/stub that satisfies its contract (e.g. a `FakeSttProvider`, a fake `Scanner`).
-5. **Before declaring done:** `npx tsc --noEmit` and `npm run build` must pass, plus your package's
-   tests. Don't introduce `any` to silence the compiler.
+1. **Work is issue-driven.** The backlog lives in GitHub Issues. The autonomous loops
+   (dispatch/babysit/triage, via the `agent-ops` plugin — see below) work `ready`-labeled issues on
+   `claude/agent/issue-N` branches. Interactive sessions take one issue/change per branch, named
+   `claude/<type>/<short-slug>`, and go through a PR — never commit to `main`.
+2. **The old contract files are now API seams, not frozen.** `src/lib/text.ts`,
+   `src/compendium/types.ts`, `src/matching/types.ts`, `src/stt/types.ts`, and the public
+   `Compendium` interface (`loadCompendium()` return type; `exact`/`phonetic`/`search` signatures)
+   may change — but treat any change to them as an **API change**: call it out explicitly in the
+   PR description, update all dependents in the same PR, and keep `.agent-ops/REPO-FACTS.md` and
+   `docs/DESIGN.md` consistent with the change. Test files were never frozen and still aren't.
+3. **Parallel work still isolates in worktrees** (`git worktree add <path> -b <branch> origin/main`;
+   worktree base dir comes from `.agent-ops/config.local.json`). One session per worktree; frontend
+   worktrees need their own `npm install`.
+4. **Before declaring done:** `npx tsc --noEmit`, `npm run build`, and `npm test` must pass.
+   Don't introduce `any` to silence the compiler.
 
 ## Conventions
 
